@@ -22,6 +22,15 @@ Phase 2 adds the first user-facing workflow:
 - upload metadata is persisted for later lookup
 - the frontend upload page shows upload state, errors, and file preview
 
+## Phase 3 status
+
+Phase 3 adds the first OCR pass:
+
+- `POST /api/uploads/{id}/ocr` runs OCR on a stored receipt
+- image uploads go directly through Tesseract
+- PDF uploads are converted to images and OCR'd page by page
+- raw OCR text is returned to the frontend and stored in upload metadata
+
 ## V1 scope
 
 The first version stays intentionally small:
@@ -48,7 +57,15 @@ boring-ai/
 
 ## Local setup
 
-### 1. Start the backend
+### 1. Install OCR system tools
+
+On macOS:
+
+```bash
+brew install tesseract poppler
+```
+
+### 2. Start the backend
 
 ```bash
 cd backend
@@ -58,7 +75,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Start the frontend
+### 3. Start the frontend
 
 ```bash
 cd frontend
