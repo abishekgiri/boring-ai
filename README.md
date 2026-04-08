@@ -13,15 +13,6 @@ Phase 1 sets up the project foundation:
 - `GET /health` confirms the backend is running
 - the frontend homepage checks the backend health endpoint
 
-## Phase 2 status
-
-Phase 2 adds the first user-facing workflow:
-
-- `POST /api/uploads` accepts receipt images and PDFs
-- uploads are validated and stored locally under `backend/uploads/`
-- upload metadata is persisted for later lookup
-- the frontend upload page shows upload state, errors, and file preview
-
 ## V1 scope
 
 The first version stays intentionally small:
