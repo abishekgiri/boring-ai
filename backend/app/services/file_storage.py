@@ -28,6 +28,13 @@ def _metadata_path(upload_id: str) -> Path:
     return settings.uploads_metadata_dir / f"{upload_id}.json"
 
 
+def _save_upload_metadata(record: UploadRecord) -> None:
+    _metadata_path(record.id).write_text(
+        record.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+
 def _validate_upload(file: Optional[UploadFile]) -> None:
     settings = get_settings()
 
@@ -103,12 +110,10 @@ async def save_upload(file: Optional[UploadFile]) -> UploadRecord:
         size=file_size,
         file_url=f"{settings.uploads_public_path}/{stored_filename}",
         created_at=datetime.now(timezone.utc),
+        ocr_text=None,
     )
 
-    _metadata_path(upload_id).write_text(
-        record.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
+    _save_upload_metadata(record)
 
     await file.close()
     return record
@@ -133,3 +138,15 @@ def get_upload_metadata(upload_id: str) -> UploadRecord:
         )
 
     return record
+
+
+def get_upload_file_path(upload_id: str) -> Path:
+    record = get_upload_metadata(upload_id)
+    return get_settings().uploads_files_dir / record.stored_filename
+
+
+def update_upload_ocr_text(upload_id: str, text: str) -> UploadRecord:
+    record = get_upload_metadata(upload_id)
+    updated_record = record.model_copy(update={"ocr_text": text})
+    _save_upload_metadata(updated_record)
+    return updated_record

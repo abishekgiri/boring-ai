@@ -3,9 +3,9 @@ import UploadForm from "../components/upload-form";
 
 const phaseChecklist = [
   "User can upload a receipt image or PDF",
-  "Backend validates file type and file size",
-  "Uploaded files are stored locally with metadata",
-  "Frontend shows a receipt preview and clear errors",
+  "Backend validates and stores the file locally",
+  "OCR runs on images and PDFs",
+  "Frontend shows raw extracted text with loading and error states",
 ];
 
 const apiBaseUrl =
@@ -47,15 +47,16 @@ export default async function Home() {
         <header className="mb-10 flex flex-col gap-6 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 2 in progress
+              Phase 3 in progress
             </p>
             <h1 className="max-w-3xl font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               boring-ai
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
               Self-hosted AI back office for freelancers. The first real product
-              flow starts here: receipt uploads that validate cleanly, store
-              locally, and show a preview we can build OCR on top of next.
+              flow now reads receipts: upload the file, store it locally, and
+              surface the raw text so the next phase can turn it into structured
+              expense data.
             </p>
           </div>
 
@@ -73,10 +74,10 @@ export default async function Home() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-              Upload checklist
+              OCR checklist
             </p>
             <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-              What Phase 2 locks down
+              What Phase 3 locks down
             </h2>
             <ul className="mt-6 space-y-3">
               {phaseChecklist.map((item) => (
@@ -97,8 +98,8 @@ export default async function Home() {
                 Next after this
               </p>
               <p className="mt-2 text-base leading-7 text-stone-300">
-                Phase 3 will take the stored receipt, run OCR, and surface the
-                raw extracted text.
+                Phase 4 will turn the raw OCR output into structured fields like
+                vendor, amount, date, and category.
               </p>
             </div>
           </div>
