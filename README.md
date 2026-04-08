@@ -1,35 +1,78 @@
 # boring-ai
 
-Self-hosted AI for boring workflows.
+Self-hosted AI back office for freelancers.
 
-## Positioning
+Turn receipts into structured expenses in seconds.
 
-`boring-ai` is a self-hosted AI back office for freelancers. It focuses on the
-tasks people already hate doing:
+## Phase 1 status
 
-- invoices
-- receipts
-- tax prep
-- back-office admin
+Phase 1 sets up the project foundation:
 
-The angle is simple: automate the most annoying business workflows without
-forcing users to send sensitive financial data into someone else's cloud.
+- `frontend/` contains the Next.js app
+- `backend/` contains the FastAPI service
+- `GET /health` confirms the backend is running
+- the frontend homepage checks the backend health endpoint
 
-## Why this idea works
+## V1 scope
 
-- It solves a real pain point with clear monetary value.
-- Self-hosting gives the product a privacy-first edge.
-- The concept is easy to explain, share, and market.
-- It can start as a useful tool and grow into a larger SaaS business.
+The first version stays intentionally small:
 
-## Tagline options
+- upload receipt images or PDFs
+- extract OCR text
+- convert OCR text into structured fields
+- let the user edit those fields
+- save expenses
+- list and filter expenses
+- export CSV
 
-- Let AI handle the paperwork you already hate.
-- The self-hosted AI back office for freelancers.
-- Private AI for invoices, receipts, and tax prep.
+## Project structure
 
-## Files
+```text
+boring-ai/
+├── backend/
+├── examples/
+├── frontend/
+├── .env.example
+├── README.md
+└── roadmap.md
+```
 
-- `index.html` - landing page structure and copy
-- `styles.css` - visual design and responsive layout
-- `script.js` - simple reveal animations
+## Local setup
+
+### 1. Start the backend
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+### 2. Start the frontend
+
+```bash
+cd frontend
+cp ../.env.example .env.local
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000`.
+
+## Environment variables
+
+Use `.env.example` as the starting point.
+
+### Backend
+
+- `APP_ENV`
+- `BACKEND_CORS_ORIGINS`
+
+### Frontend
+
+- `NEXT_PUBLIC_API_BASE_URL`
+
+## Roadmap
+
+The phased execution plan lives in `roadmap.md`.
