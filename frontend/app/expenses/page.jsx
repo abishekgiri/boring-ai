@@ -25,8 +25,11 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: "unknown", label: "Unknown" },
 ];
 const REVIEW_FILTER_OPTIONS = [
-  { value: "all", label: "All records" },
-  { value: "review", label: "Needs review only" },
+  { value: "", label: "All records" },
+  { value: "needs_review", label: "Needs review" },
+  { value: "warning", label: "Low confidence" },
+  { value: "caution", label: "Medium confidence" },
+  { value: "strong", label: "Looks strong" },
 ];
 
 function formatCurrency(amount) {
@@ -49,7 +52,7 @@ function buildExpensesUrl(
   search,
   category,
   documentType,
-  reviewOnly,
+  reviewStatus,
   dateFrom,
   dateTo,
   sortBy,
@@ -70,8 +73,8 @@ function buildExpensesUrl(
     params.set("document_type", documentType);
   }
 
-  if (reviewOnly) {
-    params.set("review_only", "true");
+  if (reviewStatus) {
+    params.set("review_status", reviewStatus);
   }
 
   if (dateFrom) {
@@ -139,7 +142,7 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [documentType, setDocumentType] = useState("");
-  const [reviewOnly, setReviewOnly] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortOption, setSortOption] = useState("date-desc");
@@ -152,7 +155,7 @@ export default function ExpensesPage() {
     deferredSearch ||
       category ||
       documentType ||
-      reviewOnly ||
+      reviewStatus ||
       dateFrom ||
       dateTo ||
       sortOption !== "date-desc" ||
@@ -160,6 +163,15 @@ export default function ExpensesPage() {
   );
   const duplicateVisibleCount = items.filter(
     (expense) => expense.has_possible_duplicate
+  ).length;
+  const warningVisibleCount = items.filter(
+    (expense) => expense.review_level === "warning"
+  ).length;
+  const cautionVisibleCount = items.filter(
+    (expense) => expense.review_level === "caution"
+  ).length;
+  const strongVisibleCount = items.filter(
+    (expense) => expense.review_level === "strong"
   ).length;
   const reviewVisibleCount = items.filter(
     (expense) =>
@@ -171,7 +183,7 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     documentType,
-    reviewOnly,
+    reviewStatus,
     dateFrom,
     dateTo,
     sortBy,
@@ -193,7 +205,7 @@ export default function ExpensesPage() {
             deferredSearch,
             category,
             documentType,
-            reviewOnly,
+            reviewStatus,
             dateFrom,
             dateTo,
             sortBy,
@@ -242,7 +254,7 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     documentType,
-    reviewOnly,
+    reviewStatus,
     dateFrom,
     dateTo,
     duplicatesOnly,
@@ -292,6 +304,38 @@ export default function ExpensesPage() {
     router.push(`/expenses/${expenseId}`);
   }
 
+  function applyWorkspacePreset(preset) {
+    setDeleteErrorMessage("");
+    setDeleteSuccessMessage("");
+
+    if (preset === "warning") {
+      setReviewStatus("warning");
+      setDuplicatesOnly(false);
+      setSortOption("review-desc");
+      return;
+    }
+
+    if (preset === "caution") {
+      setReviewStatus("caution");
+      setDuplicatesOnly(false);
+      setSortOption("review-desc");
+      return;
+    }
+
+    if (preset === "strong") {
+      setReviewStatus("strong");
+      setDuplicatesOnly(false);
+      setSortOption("review-asc");
+      return;
+    }
+
+    if (preset === "duplicates") {
+      setReviewStatus("");
+      setDuplicatesOnly(true);
+      setSortOption("date-desc");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.18),_transparent_28%),linear-gradient(180deg,_#fff8ef_0%,_#f5ead9_50%,_#eadbc4_100%)] px-4 py-6 text-stone-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col rounded-[2rem] border border-stone-900/10 bg-white/70 p-6 shadow-[0_30px_80px_rgba(120,53,15,0.12)] backdrop-blur md:p-10">
@@ -323,6 +367,112 @@ export default function ExpensesPage() {
             </div>
           </div>
         </header>
+
+        <section className="mb-6 rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
+                Review summary
+              </p>
+              <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
+                Triage the workspace faster
+              </h2>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
+                Use the live counts below to jump straight into low-confidence
+                records, medium-confidence follow-up, clean records, or likely
+                duplicates inside the current result set.
+              </p>
+            </div>
+
+            <p className="text-sm leading-7 text-stone-600">
+              {isLoading
+                ? "Preparing review summary..."
+                : "Counts reflect the expenses visible under your current filters."}
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "warning"
+                  ? "border-rose-300 bg-rose-50"
+                  : "border-stone-900/10 bg-white hover:bg-rose-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("warning")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">
+                Needs review
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : warningVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Lowest-confidence records. Sort these to the top and fix them first.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "caution"
+                  ? "border-amber-300 bg-amber-50"
+                  : "border-stone-900/10 bg-white hover:bg-amber-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("caution")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Review suggested
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : cautionVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Medium-confidence records that deserve a quick second look.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "strong"
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-stone-900/10 bg-white hover:bg-emerald-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("strong")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Looks strong
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : strongVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Strong records that can stay in the background while you clean up the rest.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                duplicatesOnly
+                  ? "border-fuchsia-300 bg-fuchsia-50"
+                  : "border-stone-900/10 bg-white hover:bg-fuchsia-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("duplicates")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-700">
+                Possible duplicates
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : duplicateVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Compare matching records before export or deletion.
+              </p>
+            </button>
+          </div>
+        </section>
 
         <section className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -359,7 +509,7 @@ export default function ExpensesPage() {
                     setSearch("");
                     setCategory("");
                     setDocumentType("");
-                    setReviewOnly(false);
+                    setReviewStatus("");
                     setDateFrom("");
                     setDateTo("");
                     setDuplicatesOnly(false);
@@ -450,12 +600,12 @@ export default function ExpensesPage() {
 
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Review queue
+                Review status
               </span>
               <select
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
-                onChange={(event) => setReviewOnly(event.target.value === "review")}
-                value={reviewOnly ? "review" : "all"}
+                onChange={(event) => setReviewStatus(event.target.value)}
+                value={reviewStatus}
               >
                 {REVIEW_FILTER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -492,6 +642,8 @@ export default function ExpensesPage() {
               >
                 <option value="date-desc">Newest first</option>
                 <option value="date-asc">Oldest first</option>
+                <option value="review-desc">Needs review first</option>
+                <option value="review-asc">Strongest first</option>
                 <option value="amount-desc">Highest amount</option>
                 <option value="amount-asc">Lowest amount</option>
               </select>
@@ -559,7 +711,7 @@ export default function ExpensesPage() {
               </h3>
               <p className="mt-3 text-sm leading-7 text-stone-600">
                 {hasActiveFilters
-                  ? "Try adjusting vendor, category, document type, review queue, or date range to widen the results."
+                  ? "Try adjusting vendor, category, document type, review status, or date range to widen the results."
                   : "Upload and save a receipt to start building your workspace."}
               </p>
               {!hasActiveFilters ? (
@@ -639,8 +791,7 @@ export default function ExpensesPage() {
                         <td className="px-4 py-4">
                           {expense.has_possible_duplicate ||
                           expense.document_type ||
-                          (expense.review_badge &&
-                            expense.review_level !== "strong") ? (
+                          expense.review_badge ? (
                             <div className="space-y-2">
                               {expense.document_type ? (
                                 <div>
@@ -654,14 +805,15 @@ export default function ExpensesPage() {
                                   ) : null}
                                 </div>
                               ) : null}
-                              {expense.review_badge &&
-                              expense.review_level !== "strong" ? (
+                              {expense.review_badge ? (
                                 <div>
                                   <span
                                     className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
                                       expense.review_level === "warning"
                                         ? "border-rose-900/10 bg-rose-50 text-rose-900"
-                                        : "border-amber-900/10 bg-amber-50 text-amber-900"
+                                        : expense.review_level === "caution"
+                                          ? "border-amber-900/10 bg-amber-50 text-amber-900"
+                                          : "border-emerald-900/10 bg-emerald-50 text-emerald-900"
                                     }`}
                                   >
                                     {expense.review_badge}
