@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import UploadPreview from "./upload-preview";
@@ -407,7 +408,7 @@ export default function UploadForm({ apiBaseUrl }) {
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-            Phase 5
+            Core workflow
           </p>
           <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
             Receipt upload + extraction + save
@@ -719,6 +720,15 @@ export default function UploadForm({ apiBaseUrl }) {
                   {savedExpense.category}
                 </p>
               </div>
+            </div>
+
+            <div className="mt-5">
+              <Link
+                className="inline-flex min-h-11 items-center justify-center rounded-full border border-emerald-900/10 bg-white px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-950 transition hover:bg-emerald-100"
+                href="/expenses"
+              >
+                Open expense workspace
+              </Link>
             </div>
           </div>
         ) : null}
