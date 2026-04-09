@@ -209,18 +209,7 @@ Planned:
 
 ## Contributing
 
-Contributions are welcome.
-
-1. Fork the repo
-2. Create a feature branch
-3. Open a pull request
-
-Good first contribution areas:
-
-- UI improvements
-- better OCR parsing
-- new filters
-- performance improvements
+See `CONTRIBUTING.md` for setup, workflow, and pull request guidelines.
 
 ---
 
@@ -234,4 +223,4 @@ This project automates the boring parts so freelancers can focus on real work.
 
 ## License
 
-No license file has been added yet.
+MIT. See [`LICENSE`](./LICENSE).
