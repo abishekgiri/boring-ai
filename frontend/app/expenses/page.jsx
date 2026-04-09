@@ -24,6 +24,10 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: "invoice", label: "Invoices" },
   { value: "unknown", label: "Unknown" },
 ];
+const REVIEW_FILTER_OPTIONS = [
+  { value: "all", label: "All records" },
+  { value: "review", label: "Needs review only" },
+];
 
 function formatCurrency(amount) {
   return new Intl.NumberFormat("en-US", {
@@ -45,6 +49,7 @@ function buildExpensesUrl(
   search,
   category,
   documentType,
+  reviewOnly,
   dateFrom,
   dateTo,
   sortBy,
@@ -63,6 +68,10 @@ function buildExpensesUrl(
 
   if (documentType) {
     params.set("document_type", documentType);
+  }
+
+  if (reviewOnly) {
+    params.set("review_only", "true");
   }
 
   if (dateFrom) {
@@ -130,6 +139,7 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [documentType, setDocumentType] = useState("");
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortOption, setSortOption] = useState("date-desc");
@@ -142,6 +152,7 @@ export default function ExpensesPage() {
     deferredSearch ||
       category ||
       documentType ||
+      reviewOnly ||
       dateFrom ||
       dateTo ||
       sortOption !== "date-desc" ||
@@ -150,12 +161,17 @@ export default function ExpensesPage() {
   const duplicateVisibleCount = items.filter(
     (expense) => expense.has_possible_duplicate
   ).length;
+  const reviewVisibleCount = items.filter(
+    (expense) =>
+      expense.review_level === "warning" || expense.review_level === "caution"
+  ).length;
   const canExport = !isLoading && total > 0;
   const exportUrl = buildExpensesUrl(
     "export",
     deferredSearch,
     category,
     documentType,
+    reviewOnly,
     dateFrom,
     dateTo,
     sortBy,
@@ -177,6 +193,7 @@ export default function ExpensesPage() {
             deferredSearch,
             category,
             documentType,
+            reviewOnly,
             dateFrom,
             dateTo,
             sortBy,
@@ -225,6 +242,7 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     documentType,
+    reviewOnly,
     dateFrom,
     dateTo,
     duplicatesOnly,
@@ -341,6 +359,7 @@ export default function ExpensesPage() {
                     setSearch("");
                     setCategory("");
                     setDocumentType("");
+                    setReviewOnly(false);
                     setDateFrom("");
                     setDateTo("");
                     setDuplicatesOnly(false);
@@ -356,7 +375,7 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-8">
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Search vendor or OCR
@@ -431,6 +450,23 @@ export default function ExpensesPage() {
 
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                Review queue
+              </span>
+              <select
+                className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
+                onChange={(event) => setReviewOnly(event.target.value === "review")}
+                value={reviewOnly ? "review" : "all"}
+              >
+                {REVIEW_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Duplicate view
               </span>
               <select
@@ -489,6 +525,13 @@ export default function ExpensesPage() {
             </div>
           ) : null}
 
+          {!isLoading && reviewVisibleCount > 0 ? (
+            <div className="mt-4 rounded-2xl border border-rose-900/10 bg-rose-50/80 px-4 py-3 text-sm leading-7 text-rose-950">
+              {reviewVisibleCount} visible expense
+              {reviewVisibleCount === 1 ? "" : "s"} still {reviewVisibleCount === 1 ? "needs" : "need"} review based on the original extraction confidence.
+            </div>
+          ) : null}
+
           {errorMessage ? (
             <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
               {errorMessage}
@@ -516,7 +559,7 @@ export default function ExpensesPage() {
               </h3>
               <p className="mt-3 text-sm leading-7 text-stone-600">
                 {hasActiveFilters
-                  ? "Try adjusting vendor, category, document type, or date range to widen the results."
+                  ? "Try adjusting vendor, category, document type, review queue, or date range to widen the results."
                   : "Upload and save a receipt to start building your workspace."}
               </p>
               {!hasActiveFilters ? (
@@ -594,7 +637,10 @@ export default function ExpensesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          {expense.has_possible_duplicate || expense.document_type ? (
+                          {expense.has_possible_duplicate ||
+                          expense.document_type ||
+                          (expense.review_badge &&
+                            expense.review_level !== "strong") ? (
                             <div className="space-y-2">
                               {expense.document_type ? (
                                 <div>
@@ -604,6 +650,25 @@ export default function ExpensesPage() {
                                   {expense.document_badge ? (
                                     <p className="mt-1 text-xs leading-5 text-stone-500">
                                       {expense.document_badge}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {expense.review_badge &&
+                              expense.review_level !== "strong" ? (
+                                <div>
+                                  <span
+                                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                      expense.review_level === "warning"
+                                        ? "border-rose-900/10 bg-rose-50 text-rose-900"
+                                        : "border-amber-900/10 bg-amber-50 text-amber-900"
+                                    }`}
+                                  >
+                                    {expense.review_badge}
+                                  </span>
+                                  {expense.review_reason ? (
+                                    <p className="mt-1 text-xs leading-5 text-stone-500">
+                                      {expense.review_reason}
                                     </p>
                                   ) : null}
                                 </div>
