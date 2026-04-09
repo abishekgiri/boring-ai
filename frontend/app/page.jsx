@@ -2,10 +2,10 @@ import HealthStatus from "../components/health-status";
 import UploadForm from "../components/upload-form";
 
 const phaseChecklist = [
-  "OCR text can be sent to the AI extraction service",
-  "The backend returns validated vendor, amount, date, and category fields",
-  "The upload page shows extracted fields in an editable review form",
-  "Loading and error states cover OCR and field extraction",
+  "Reviewed expense fields can be saved into SQLite",
+  "Saved expenses stay linked to the uploaded receipt and OCR text",
+  "The upload page shows save loading, success, and error states",
+  "A saved expense can be fetched back from the backend",
 ];
 
 const apiBaseUrl =
@@ -47,15 +47,15 @@ export default async function Home() {
         <header className="mb-10 flex flex-col gap-6 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 4 in progress
+              Phase 5 in progress
             </p>
             <h1 className="max-w-3xl font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               boring-ai
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
               Self-hosted AI back office for freelancers. The product is now
-              crossing the line from OCR tooling into actual AI workflow:
-              receipt text becomes editable structured expense fields.
+              crossing the line from AI workflow into a real app: reviewed
+              receipt fields can now become permanent expense records.
             </p>
           </div>
 
@@ -73,10 +73,10 @@ export default async function Home() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-              Extraction checklist
+              Persistence checklist
             </p>
             <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-              What Phase 4 locks down
+              What Phase 5 locks down
             </h2>
             <ul className="mt-6 space-y-3">
               {phaseChecklist.map((item) => (
@@ -97,8 +97,8 @@ export default async function Home() {
                 Next after this
               </p>
               <p className="mt-2 text-base leading-7 text-stone-300">
-                Phase 5 will save these reviewed fields into SQLite as real
-                expense records.
+                Phase 6 will turn saved expenses into a searchable workspace
+                with filters and browsing.
               </p>
             </div>
           </div>

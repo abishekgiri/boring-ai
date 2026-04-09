@@ -40,6 +40,15 @@ Phase 4 adds AI field extraction:
 - extracted fields are stored back in upload metadata
 - the frontend shows an editable review form before save
 
+## Phase 5 status
+
+Phase 5 adds SQLite persistence for reviewed expenses:
+
+- `POST /api/expenses` saves a reviewed expense into SQLite
+- `GET /api/expenses/{id}` fetches a saved expense
+- the backend derives `file_path` and `raw_ocr_text` from upload metadata
+- the frontend can save reviewed fields and show a success state
+
 ## V1 scope
 
 The first version stays intentionally small:
@@ -104,6 +113,7 @@ Use `.env.example` as the starting point.
 
 - `APP_ENV`
 - `BACKEND_CORS_ORIGINS`
+- `SQLITE_DATABASE_PATH`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `OPENAI_API_BASE_URL`
