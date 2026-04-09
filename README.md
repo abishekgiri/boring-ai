@@ -1,66 +1,85 @@
 # boring-ai
 
-> Self-hosted AI back office for freelancers  
-> Turn receipts into structured expenses in seconds.
+Self-hosted AI receipt processing for freelancers.
 
----
+`boring-ai` turns messy receipts into structured expenses you can review, fix,
+save, search, edit, and export.
+
+## Core workflow
+
+```text
+Upload -> OCR -> Extract -> Review -> Save -> Browse -> Export
+```
 
 ## What it does
 
-`boring-ai` takes messy receipts and turns them into clean, structured expense data.
-
 - Upload receipts as images or PDFs
-- Extract text using OCR
-- Convert text into structured fields using AI
-- Review and edit extracted data
-- Save expenses into a database
-- Browse and filter expenses
-- Export data to CSV
+- Extract raw text with Tesseract OCR
+- Convert OCR text into structured fields with AI
+- Keep the extracted fields editable before save
+- Store expenses in SQLite
+- Browse saved expenses in a workspace
+- Search and filter by vendor, category, and date
+- Export filtered expenses to CSV
+- Delete bad records
 
----
+## Why this exists
 
-## Features
+Managing receipts is boring.
 
-- Receipt upload for images and PDFs
-- OCR with Tesseract
-- AI-powered field extraction for vendor, amount, date, and category
-- Editable review before saving
-- SQLite persistence
-- Expense workspace with search and filters
+Freelancers usually need something lighter than full accounting software, but
+they still need a reliable flow for capturing expenses, checking AI output, and
+exporting clean data later.
+
+`boring-ai` is focused on that narrow workflow.
+
+## Demo receipt
+
+The app ships with a bundled demo receipt so a first-time user can try the full
+flow without hunting for sample files.
+
+![Bundled demo receipt](./frontend/public/demo/east-repair-receipt.svg)
+
+- frontend demo asset: [`frontend/public/demo/east-repair-receipt.svg`](./frontend/public/demo/east-repair-receipt.svg)
+- sample noisy OCR text: [`examples/east-repair-messy-ocr.txt`](./examples/east-repair-messy-ocr.txt)
+- expected structured output: [`examples/east-repair-expected.json`](./examples/east-repair-expected.json)
+
+If the demo flow works as expected, it should lead to:
+
+```json
+{
+  "vendor": "East Repair Inc.",
+  "amount": 154.06,
+  "date": "2019-11-02",
+  "category": "transport"
+}
+```
+
+## Project status
+
+This is an early but usable public release.
+
+What works today:
+
+- upload and preview
+- OCR
+- AI extraction
+- editable review
+- save to SQLite
+- expense workspace
 - CSV export
-- Delete expenses
+- delete action
+- Render and Vercel deployment setup
 
----
+What is intentionally not here yet:
 
-## How it works
+- auth
+- multi-user support
+- bank imports
+- complex dashboards
+- background job systems
 
-```text
-Upload -> OCR -> AI extraction -> Review -> Save -> Browse -> Export
-```
-
----
-
-## Screenshots
-
-Add demo GIFs or screenshots here. This will make the repository much easier to understand at a glance.
-
----
-
-## Project structure
-
-```text
-boring-ai/
-├── backend/        # FastAPI backend
-├── frontend/       # Next.js frontend
-├── examples/
-├── .env.example
-├── README.md
-└── roadmap.md
-```
-
----
-
-## Local setup
+## Quick start
 
 ### 1. Install OCR tools
 
@@ -105,15 +124,24 @@ npm install
 npm run dev
 ```
 
-Open: [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3000](http://localhost:3000).
 
-If `OPENAI_API_KEY` is not set, upload and OCR still work, but AI extraction will not.
+If `OPENAI_API_KEY` is not set, upload and OCR still work, but AI extraction
+will not.
 
----
+## First run inside the app
+
+1. Click `Try demo receipt`
+2. Click `Store receipt locally`
+3. Click `Extract text`
+4. Click `Extract fields`
+5. Review the draft
+6. Click `Save expense`
+7. Open the workspace and try CSV export
 
 ## Environment variables
 
-### Backend
+Backend:
 
 - `APP_ENV`
 - `BACKEND_CORS_ORIGINS`
@@ -123,167 +151,106 @@ If `OPENAI_API_KEY` is not set, upload and OCR still work, but AI extraction wil
 - `OPENAI_API_BASE_URL`
 - `OPENAI_TIMEOUT_SECONDS`
 
-### Frontend
+Frontend:
 
 - `NEXT_PUBLIC_API_BASE_URL`
 
-Use [`./.env.example`](./.env.example) as the starting point.
-
----
+Start with [`./.env.example`](./.env.example).
 
 ## Deploy with Render and Vercel
 
-The cleanest setup for the current codebase is:
+The current deployment split is:
 
 - Render for the FastAPI backend
 - Vercel for the Next.js frontend
 
-This repo includes [`render.yaml`](./render.yaml) for the backend side.
-
-### Why this split makes sense
-
-- the frontend is a standard Next.js app, which fits Vercel well
-- the backend needs OCR system packages like Tesseract and Poppler, which is why the Render backend uses Docker
-- the backend also needs persistent storage for SQLite and uploaded files
-
-### Render backend
-
-The Render backend uses:
+Included files:
 
 - [`render.yaml`](./render.yaml)
 - [`backend/Dockerfile`](./backend/Dockerfile)
-- one persistent disk mounted for uploads and SQLite
 
-#### Render setup steps
+Why this split:
 
-1. Push the repo to GitHub.
-2. In Render, create a new Blueprint and select this repository.
-3. Let Render detect [`render.yaml`](./render.yaml).
-4. Fill in the required environment variables:
-   - `OPENAI_API_KEY`
-   - `BACKEND_CORS_ORIGINS`
-5. Deploy the backend service.
+- the frontend is a normal Next.js app, which fits Vercel well
+- the backend needs Tesseract, Poppler, SQLite, and persistent uploads, which
+  makes Render a better fit here
 
-#### Render values to set
+Important deployment notes:
 
-- `BACKEND_CORS_ORIGINS`
-  Set this to your Vercel frontend URL, for example `https://boring-ai.vercel.app`
-
-### Vercel frontend
-
-For Vercel, import the same GitHub repository and set the project root directory to `frontend`.
-
-#### Vercel setup steps
-
-1. In Vercel, create a new project from this repository.
-2. Set the root directory to `frontend`.
-3. Add the environment variable:
-   - `NEXT_PUBLIC_API_BASE_URL`
-4. Deploy the frontend.
-
-#### Vercel value to set
-
-- `NEXT_PUBLIC_API_BASE_URL`
-  Set this to your Render backend URL, for example `https://boring-ai-api.onrender.com`
-
-### Important notes
-
-- the backend is on a paid Render plan because persistent disk is required for SQLite and uploads
-- the backend will not have zero-downtime deploys while that persistent disk is attached
-- Vercel preview deployments will need matching backend CORS rules if you want previews to talk to the live backend
-- this is a solid early deployment setup, but a later production setup should move from SQLite plus local uploads to Postgres plus object storage
-
----
+- Render needs a persistent disk for SQLite and uploaded files
+- `BACKEND_CORS_ORIGINS` must include the Vercel frontend URL with `https://`
+- `NEXT_PUBLIC_API_BASE_URL` must point at the Render backend URL
+- AI extraction needs `OPENAI_API_KEY` on the backend
 
 ## API overview
 
-### System
+System:
 
 - `GET /health`
 
-### Uploads
+Uploads:
 
 - `POST /api/uploads`
 - `GET /api/uploads/{id}`
 - `POST /api/uploads/{id}/ocr`
 - `POST /api/uploads/{id}/extract`
 
-### Expenses
+Expenses:
 
 - `POST /api/expenses`
 - `GET /api/expenses`
 - `GET /api/expenses/{id}`
+- `PUT /api/expenses/{id}`
 - `GET /api/expenses/export`
 - `DELETE /api/expenses/{id}`
 
----
+## Project structure
 
-## V1 scope
-
-This project intentionally stays simple:
-
-- upload receipts
-- extract OCR text
-- convert OCR text to structured data
-- review and edit fields
-- save expenses
-- browse and filter expenses
-- export CSV
-
----
-
-## Current status
-
-Completed so far:
-
-- Phase 1: frontend and backend scaffold with health check
-- Phase 2: receipt upload, local storage, and preview
-- Phase 3: OCR flow
-- Phase 4: AI extraction and editable review
-- Phase 5: save reviewed expenses to SQLite
-- Phase 6: expense workspace with search and filters
-- Phase 7: CSV export and delete action
-
----
+```text
+boring-ai/
+├── backend/
+├── frontend/
+├── examples/
+├── .github/
+├── .env.example
+├── CONTRIBUTING.md
+├── LICENSE
+├── README.md
+└── roadmap.md
+```
 
 ## Privacy notes
 
 - uploaded files stay on the local filesystem under `backend/uploads/files/`
 - upload metadata stays under `backend/uploads/metadata/`
-- saved expenses are stored in local SQLite
+- saved expenses are stored in SQLite
 - AI extraction currently uses the OpenAI API
-- local model support is planned later
-
----
+- local model support can come later
 
 ## Roadmap
 
-See [`./roadmap.md`](./roadmap.md).
+See [`roadmap.md`](./roadmap.md).
 
-Planned:
+Near-term improvements:
 
-- edit expense
-- multi-user support
-- bank CSV import
-- mobile support
-- better OCR accuracy
-- UI improvements
-
----
+- more polished app screenshots or GIFs
+- more sample receipts in `examples/`
+- better OCR trust messaging and quality hints
+- more resilient extraction for difficult receipts
 
 ## Contributing
 
-See `CONTRIBUTING.md` for setup, workflow, and pull request guidelines.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for setup, workflow, and pull request
+guidelines.
 
----
+Good first contribution areas:
 
-## Why this exists
-
-Managing receipts is boring.
-
-This project automates the boring parts so freelancers can focus on real work.
-
----
+- UI polish
+- clearer loading and empty states
+- OCR edge-case handling
+- extraction quality improvements
+- README and docs polish
+- better sample receipts and demo assets
 
 ## License
 
