@@ -15,3 +15,13 @@ CREATE TABLE IF NOT EXISTS expenses (
 )
 """
 
+
+CREATE_VENDOR_HINTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS vendor_learning_hints (
+    vendor_key TEXT PRIMARY KEY,
+    preferred_vendor TEXT NOT NULL,
+    preferred_category TEXT,
+    usage_count INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+)
+"""

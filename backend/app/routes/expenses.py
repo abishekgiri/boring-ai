@@ -15,6 +15,7 @@ from app.db.database import (
     get_expense_by_id,
     insert_expense,
     list_expenses,
+    record_learning_hint,
     update_expense_by_id,
 )
 from app.schemas.expenses import (
@@ -83,11 +84,21 @@ def create_expense(payload: ExpenseCreate) -> ExpenseRecord:
             detail="OCR text is missing. Run OCR before saving an expense.",
         )
 
-    return insert_expense(
+    expense_record = insert_expense(
         payload,
         file_path=_build_file_path(upload_record.stored_filename),
         raw_ocr_text=upload_record.ocr_text,
     )
+
+    if payload.learning_context:
+        record_learning_hint(
+            observed_vendor=payload.learning_context.observed_vendor,
+            observed_category=payload.learning_context.observed_category,
+            final_vendor=expense_record.vendor,
+            final_category=expense_record.category,
+        )
+
+    return expense_record
 
 
 @router.post("/check-duplicates", response_model=ExpenseDuplicateResponse)
@@ -175,7 +186,17 @@ def delete_expense(expense_id: int) -> Response:
 
 @router.put("/{expense_id}", response_model=ExpenseRecord)
 def update_expense(expense_id: int, payload: ExpenseUpdate) -> ExpenseRecord:
-    return update_expense_by_id(expense_id, payload)
+    expense_record = update_expense_by_id(expense_id, payload)
+
+    if payload.learning_context:
+        record_learning_hint(
+            observed_vendor=payload.learning_context.observed_vendor,
+            observed_category=payload.learning_context.observed_category,
+            final_vendor=expense_record.vendor,
+            final_category=expense_record.category,
+        )
+
+    return expense_record
 
 
 @router.get("/{expense_id}", response_model=ExpenseRecord)

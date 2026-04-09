@@ -39,27 +39,8 @@ class ExpenseFieldsBase(BaseModel):
         return normalized
 
 
-class ExpenseCreate(ExpenseFieldsBase):
-    upload_id: str
-
-    @field_validator("upload_id", mode="before")
-    @classmethod
-    def normalize_upload_id(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-
-        return value.strip()
-
-    @field_validator("upload_id")
-    @classmethod
-    def validate_upload_id(cls, value: str) -> str:
-        if not value:
-            raise ValueError("Upload ID is required.")
-        return value
-
-
 class ExpenseUpdate(ExpenseFieldsBase):
-    pass
+    learning_context: Optional["ExpenseLearningContext"] = None
 
 
 class ExpenseDuplicateCheck(BaseModel):
@@ -90,6 +71,51 @@ class ExpenseDuplicateCheck(BaseModel):
     def validate_vendor(cls, value: str) -> str:
         if not value:
             raise ValueError("Vendor is required.")
+        return value
+
+
+class ExpenseLearningContext(BaseModel):
+    observed_vendor: Optional[str] = None
+    observed_category: Optional[ExpenseCategory] = None
+
+    @field_validator("observed_vendor", mode="before")
+    @classmethod
+    def normalize_observed_vendor(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("observed_category", mode="before")
+    @classmethod
+    def normalize_observed_category(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized or None
+        return value
+
+
+class ExpenseCreate(ExpenseFieldsBase):
+    upload_id: str
+    learning_context: Optional[ExpenseLearningContext] = None
+
+    @field_validator("upload_id", mode="before")
+    @classmethod
+    def normalize_upload_id(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        return value.strip()
+
+    @field_validator("upload_id")
+    @classmethod
+    def validate_upload_id(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Upload ID is required.")
         return value
 
 
