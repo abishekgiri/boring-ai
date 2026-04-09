@@ -134,20 +134,13 @@ def _build_duplicate_match_reason(
 
 
 def _format_review_field_names(field_names: list[str]) -> str:
-    labels = {
-        "vendor": "vendor",
-        "amount": "amount",
-        "date": "date",
-        "category": "category",
-    }
-    names = [labels.get(field_name, field_name) for field_name in field_names]
-    if not names:
+    if not field_names:
         return ""
-    if len(names) == 1:
-        return names[0]
-    if len(names) == 2:
-        return f"{names[0]} and {names[1]}"
-    return f"{', '.join(names[:-1])}, and {names[-1]}"
+    if len(field_names) == 1:
+        return field_names[0]
+    if len(field_names) == 2:
+        return f"{field_names[0]} and {field_names[1]}"
+    return f"{', '.join(field_names[:-1])}, and {field_names[-1]}"
 
 
 def _build_review_signal(upload_record: UploadRecord) -> tuple[
