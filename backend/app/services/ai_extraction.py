@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from app.core.config import get_settings
 from app.db.database import get_vendor_learning_hint
 from app.schemas.uploads import (
+    ClassificationLevel,
     ExtractedExpenseFields,
     ExtractedFieldConfidence,
     ExtractedFieldProvenance,
