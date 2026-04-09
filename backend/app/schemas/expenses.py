@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import List
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -57,3 +58,8 @@ class ExpenseRecord(BaseModel):
     category: ExpenseCategory
     raw_ocr_text: str
     created_at: datetime
+
+
+class ExpenseListResponse(BaseModel):
+    items: List[ExpenseRecord]
+    total: int

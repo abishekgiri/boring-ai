@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import List, Optional
 
 from fastapi import HTTPException, status
 
@@ -109,3 +110,53 @@ def get_expense_by_id(expense_id: int) -> ExpenseRecord:
         )
 
     return _row_to_expense(row)
+
+
+def list_expenses(
+    *,
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> List[ExpenseRecord]:
+    query_lines = [
+        """
+        SELECT
+            id,
+            upload_id,
+            file_path,
+            vendor,
+            amount,
+            expense_date,
+            category,
+            raw_ocr_text,
+            created_at
+        FROM expenses
+        WHERE 1 = 1
+        """
+    ]
+    parameters: list[object] = []
+
+    if search:
+        query_lines.append("AND LOWER(vendor) LIKE ?")
+        parameters.append(f"%{search.lower()}%")
+
+    if category:
+        query_lines.append("AND category = ?")
+        parameters.append(category)
+
+    if date_from:
+        query_lines.append("AND expense_date >= ?")
+        parameters.append(date_from.isoformat())
+
+    if date_to:
+        query_lines.append("AND expense_date <= ?")
+        parameters.append(date_to.isoformat())
+
+    query_lines.append("ORDER BY expense_date DESC, created_at DESC")
+    query = "\n".join(query_lines)
+
+    with closing(_get_connection()) as connection:
+        rows = connection.execute(query, parameters).fetchall()
+
+    return [_row_to_expense(row) for row in rows]
