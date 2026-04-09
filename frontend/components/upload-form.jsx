@@ -104,6 +104,21 @@ function createEmptyExtractedFields() {
   };
 }
 
+function createEmptyExtractionProvenance() {
+  return {
+    vendor: null,
+    amount: null,
+    date: null,
+    category: null,
+    subtotal: null,
+    tax_amount: null,
+    receipt_number: null,
+    due_date: null,
+    payment_method: null,
+    line_items: null,
+  };
+}
+
 function mapExtractedFields(fields) {
   return {
     vendor: fields?.vendor ?? "",
@@ -141,6 +156,28 @@ function mapExtractedFields(fields) {
               : String(item.line_total),
         }))
       : [],
+  };
+}
+
+function mapExtractionProvenance(provenance) {
+  const empty = createEmptyExtractionProvenance();
+
+  if (!provenance || typeof provenance !== "object") {
+    return empty;
+  }
+
+  return {
+    ...empty,
+    vendor: provenance.vendor ?? null,
+    amount: provenance.amount ?? null,
+    date: provenance.date ?? null,
+    category: provenance.category ?? null,
+    subtotal: provenance.subtotal ?? null,
+    tax_amount: provenance.tax_amount ?? null,
+    receipt_number: provenance.receipt_number ?? null,
+    due_date: provenance.due_date ?? null,
+    payment_method: provenance.payment_method ?? null,
+    line_items: provenance.line_items ?? null,
   };
 }
 
@@ -302,6 +339,16 @@ function normalizeComparableText(value) {
 
 function normalizeFieldValue(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function wasFieldEditedAfterExtraction(snapshot, fields, fieldName) {
+  const originalValue = snapshot?.[fieldName];
+  const currentValue = fields?.[fieldName];
+
+  return (
+    normalizeFieldValue(currentValue) !== "" &&
+    normalizeFieldValue(currentValue) !== normalizeFieldValue(originalValue)
+  );
 }
 
 function includesComparableText(haystack, needle) {
@@ -1031,6 +1078,41 @@ function FieldConfidenceBadge({ confidence }) {
   );
 }
 
+function FieldSourceHint({ provenance, changedManually = false }) {
+  if (!provenance?.label) {
+    if (!changedManually) {
+      return null;
+    }
+
+    return (
+      <p className="mt-1 text-xs leading-5 text-stone-500">
+        <span className="font-semibold text-stone-700">
+          Edited after extraction.
+        </span>{" "}
+        The original source for this value was not captured.
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-1 text-xs leading-5 text-stone-500">
+      {changedManually ? (
+        <>
+          <span className="font-semibold text-stone-700">
+            Edited after extraction.
+          </span>{" "}
+          Original source: {provenance.label}. {provenance.details}
+        </>
+      ) : (
+        <>
+          <span className="font-semibold text-stone-700">Source:</span>{" "}
+          {provenance.label}. {provenance.details}
+        </>
+      )}
+    </p>
+  );
+}
+
 function AssessmentPanel({ assessment, eyebrow }) {
   if (!assessment) {
     return null;
@@ -1249,6 +1331,9 @@ export default function UploadForm({ apiBaseUrl }) {
   const [extractedFields, setExtractedFields] = useState(
     createEmptyExtractedFields()
   );
+  const [extractionProvenance, setExtractionProvenance] = useState(
+    createEmptyExtractionProvenance()
+  );
   const [lastExtractedSnapshot, setLastExtractedSnapshot] = useState(
     createEmptyExtractedFields()
   );
@@ -1287,6 +1372,7 @@ export default function UploadForm({ apiBaseUrl }) {
   function resetDerivedState() {
     setOcrText("");
     setExtractedFields(createEmptyExtractedFields());
+    setExtractionProvenance(createEmptyExtractionProvenance());
     setLastExtractedSnapshot(createEmptyExtractedFields());
     setOcrErrorMessage("");
     setExtractionErrorMessage("");
@@ -1404,6 +1490,9 @@ export default function UploadForm({ apiBaseUrl }) {
       setUploadedFile(payload);
       setOcrText(payload.ocr_text ?? "");
       setExtractedFields(mapExtractedFields(payload.extracted_fields));
+      setExtractionProvenance(
+        mapExtractionProvenance(payload?.extraction_provenance)
+      );
       setLastExtractedSnapshot(mapExtractedFields(payload.extracted_fields));
       setStatusMessage("Upload complete. Run OCR to see exactly what the receipt text looks like.");
     } catch (error) {
@@ -1429,6 +1518,7 @@ export default function UploadForm({ apiBaseUrl }) {
     setSaveErrorMessage("");
     setSavedExpense(null);
     setExtractedFields(createEmptyExtractedFields());
+    setExtractionProvenance(createEmptyExtractionProvenance());
     setLastExtractedSnapshot(createEmptyExtractedFields());
     setStatusMessage("Extracting raw text from the stored receipt...");
 
@@ -1450,6 +1540,7 @@ export default function UploadForm({ apiBaseUrl }) {
               ...current,
               ocr_text: payload?.text ?? "",
               extracted_fields: null,
+              extraction_provenance: null,
             }
           : current
       );
@@ -1504,12 +1595,16 @@ export default function UploadForm({ apiBaseUrl }) {
               ...current,
               ocr_text: payload?.ocr_text ?? current.ocr_text,
               extracted_fields: payload?.extracted_fields ?? null,
+              extraction_provenance: payload?.extraction_provenance ?? null,
             }
           : current
       );
       setOcrText(payload?.ocr_text ?? ocrText);
       const nextFields = mapExtractedFields(payload?.extracted_fields);
       setExtractedFields(nextFields);
+      setExtractionProvenance(
+        mapExtractionProvenance(payload?.extraction_provenance)
+      );
       setLastExtractedSnapshot(nextFields);
       setStatusMessage(
         "AI extraction complete. Review the fields below, then save the expense if everything looks right."
@@ -1694,6 +1789,28 @@ export default function UploadForm({ apiBaseUrl }) {
     ocrAssessment,
     lastExtractedSnapshot
   );
+  const fieldEditedState = {
+    vendor: wasFieldEditedAfterExtraction(
+      lastExtractedSnapshot,
+      extractedFields,
+      "vendor"
+    ),
+    amount: wasFieldEditedAfterExtraction(
+      lastExtractedSnapshot,
+      extractedFields,
+      "amount"
+    ),
+    date: wasFieldEditedAfterExtraction(
+      lastExtractedSnapshot,
+      extractedFields,
+      "date"
+    ),
+    category: wasFieldEditedAfterExtraction(
+      lastExtractedSnapshot,
+      extractedFields,
+      "category"
+    ),
+  };
   const shouldWarnBeforeSave =
     extractionAssessment?.level === "warning" && !savedExpense;
   const canSaveExpense =
@@ -2017,6 +2134,10 @@ export default function UploadForm({ apiBaseUrl }) {
                   {fieldConfidence.vendor.reason}
                 </p>
               ) : null}
+              <FieldSourceHint
+                changedManually={fieldEditedState.vendor}
+                provenance={extractionProvenance.vendor}
+              />
             </label>
 
             <label className="block">
@@ -2042,6 +2163,10 @@ export default function UploadForm({ apiBaseUrl }) {
                   {fieldConfidence.amount.reason}
                 </p>
               ) : null}
+              <FieldSourceHint
+                changedManually={fieldEditedState.amount}
+                provenance={extractionProvenance.amount}
+              />
             </label>
 
             <label className="block">
@@ -2065,6 +2190,10 @@ export default function UploadForm({ apiBaseUrl }) {
                   {fieldConfidence.date.reason}
                 </p>
               ) : null}
+              <FieldSourceHint
+                changedManually={fieldEditedState.date}
+                provenance={extractionProvenance.date}
+              />
             </label>
 
             <label className="block">
@@ -2094,6 +2223,10 @@ export default function UploadForm({ apiBaseUrl }) {
                   {fieldConfidence.category.reason}
                 </p>
               ) : null}
+              <FieldSourceHint
+                changedManually={fieldEditedState.category}
+                provenance={extractionProvenance.category}
+              />
             </label>
           </div>
         ) : null}
@@ -2131,6 +2264,7 @@ export default function UploadForm({ apiBaseUrl }) {
                     ? formatCurrencyValue(extractedFields.subtotal)
                     : "Not detected"}
                 </p>
+                <FieldSourceHint provenance={extractionProvenance.subtotal} />
               </div>
               <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
@@ -2141,6 +2275,7 @@ export default function UploadForm({ apiBaseUrl }) {
                     ? formatCurrencyValue(extractedFields.tax_amount)
                     : "Not detected"}
                 </p>
+                <FieldSourceHint provenance={extractionProvenance.tax_amount} />
               </div>
               <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
@@ -2149,6 +2284,9 @@ export default function UploadForm({ apiBaseUrl }) {
                 <p className="mt-2 text-sm font-medium text-stone-900">
                   {extractedFields.receipt_number || "Not detected"}
                 </p>
+                <FieldSourceHint
+                  provenance={extractionProvenance.receipt_number}
+                />
               </div>
               <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
@@ -2159,6 +2297,7 @@ export default function UploadForm({ apiBaseUrl }) {
                     ? formatShortDate(extractedFields.due_date)
                     : "Not detected"}
                 </p>
+                <FieldSourceHint provenance={extractionProvenance.due_date} />
               </div>
               <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
@@ -2167,6 +2306,9 @@ export default function UploadForm({ apiBaseUrl }) {
                 <p className="mt-2 text-sm font-medium text-stone-900">
                   {formatPaymentMethod(extractedFields.payment_method)}
                 </p>
+                <FieldSourceHint
+                  provenance={extractionProvenance.payment_method}
+                />
               </div>
             </div>
           </div>
@@ -2187,6 +2329,7 @@ export default function UploadForm({ apiBaseUrl }) {
                 These rows can help verify the subtotal, category, and whether
                 the document really matches the expense you are about to save.
               </p>
+              <FieldSourceHint provenance={extractionProvenance.line_items} />
             </div>
 
             <div className="mt-5 overflow-x-auto">

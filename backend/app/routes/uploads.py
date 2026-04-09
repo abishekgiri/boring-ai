@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.schemas.uploads import ExtractionResult, OcrResult, UploadRecord
-from app.services.ai_extraction import extract_expense_fields
+from app.services.ai_extraction import extract_expense_data
 from app.services.file_storage import (
     get_upload_metadata,
     save_upload,
@@ -43,11 +43,17 @@ def extract_upload_fields(upload_id: str) -> ExtractionResult:
             detail="OCR text is missing. Run OCR before extracting fields.",
         )
 
-    extracted_fields = extract_expense_fields(record.ocr_text)
-    updated_record = update_upload_extracted_fields(upload_id, extracted_fields)
+    extraction_outcome = extract_expense_data(record.ocr_text)
+    updated_record = update_upload_extracted_fields(
+        upload_id,
+        extraction_outcome.fields,
+        extraction_outcome.provenance,
+    )
 
     return ExtractionResult(
         upload_id=updated_record.id,
         ocr_text=updated_record.ocr_text or record.ocr_text,
-        extracted_fields=updated_record.extracted_fields or extracted_fields,
+        extracted_fields=updated_record.extracted_fields or extraction_outcome.fields,
+        extraction_provenance=updated_record.extraction_provenance
+        or extraction_outcome.provenance,
     )
