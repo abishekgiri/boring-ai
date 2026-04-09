@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from urllib import error, request
 
@@ -10,7 +10,12 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.db.database import get_vendor_learning_hint
-from app.schemas.uploads import ExtractedExpenseFields, ExtractedLineItem
+from app.schemas.uploads import (
+    ExtractedExpenseFields,
+    ExtractedFieldProvenance,
+    ExtractedLineItem,
+    ExtractionProvenance,
+)
 
 
 EXPENSE_CATEGORIES = [
@@ -272,6 +277,7 @@ GENERIC_VENDOR_HINTS = (
 class HeuristicFieldCandidate:
     value: object | None
     source: str | None = None
+    evidence: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -286,6 +292,41 @@ class HeuristicExtractionCandidates:
     due_date: HeuristicFieldCandidate
     payment_method: HeuristicFieldCandidate
     line_items: HeuristicFieldCandidate
+
+
+@dataclass(frozen=True)
+class ExtractionOutcome:
+    fields: ExtractedExpenseFields
+    provenance: ExtractionProvenance
+
+
+PROVENANCE_LABELS = {
+    "header_vendor": ("Merchant header", "Matched the business name near the top of the receipt."),
+    "receipt_total": ("Receipt total line", "Matched a strongly labeled receipt total line in the OCR text."),
+    "grand_total": ("Grand total line", "Matched a strongly labeled grand total line in the OCR text."),
+    "amount_due": ("Amount due line", "Matched a labeled amount due or total due line in the OCR text."),
+    "balance_due": ("Balance due line", "Matched a labeled balance due line in the OCR text."),
+    "invoice_total": ("Invoice total line", "Matched a labeled invoice total line in the OCR text."),
+    "labeled_total": ("Total line", "Matched a labeled total line in the OCR text."),
+    "subtotal_plus_tax": ("Subtotal plus tax", "Combined the detected subtotal and tax amount to reconstruct the final total."),
+    "subtotal_only": ("Subtotal fallback", "Used the subtotal because no stronger final total cue was visible."),
+    "largest_visible_amount": ("Largest visible amount", "Fell back to the largest visible amount because no strong total label was found."),
+    "subtotal_label": ("Subtotal line", "Matched a labeled subtotal line in the OCR text."),
+    "line_item_sum": ("Itemized rows", "Summed the detected line items to reconstruct the subtotal."),
+    "tax_line_or_percentage": ("Tax line", "Matched a tax line or reconstructed tax from a visible percentage."),
+    "receipt_date": ("Receipt date line", "Matched a clearly labeled receipt date line."),
+    "invoice_date": ("Invoice date line", "Matched a clearly labeled invoice date line."),
+    "labeled_date": ("Date line", "Matched a labeled date line in the OCR text."),
+    "due_date": ("Due date line", "Matched a clearly labeled due date line."),
+    "labeled_receipt_number": ("Receipt number line", "Matched a labeled receipt or invoice reference number."),
+    "numeric_receipt_number": ("Reference number", "Matched a numeric receipt or invoice reference number."),
+    "payment_keyword": ("Payment instructions", "Inferred the payment method from payment-related text on the receipt."),
+    "keyword_inference": ("Receipt cues", "Suggested this value from vendor, line-item, and OCR keyword evidence."),
+    "line_item_rows": ("Itemized rows", "Detected structured line items from the itemized section of the receipt."),
+    "ai_extraction": ("AI extraction", "Inferred this value from the OCR text when heuristics were incomplete or weaker."),
+    "learned_vendor": ("Prior correction history", "Normalized this vendor using a matching correction from earlier saved expenses."),
+    "learned_category": ("Prior correction history", "Suggested this category from earlier corrections for the same vendor."),
+}
 
 
 def _extraction_schema() -> dict:
@@ -629,7 +670,11 @@ def _extract_vendor_candidate(ocr_text: str) -> HeuristicFieldCandidate:
     if not vendor:
         return HeuristicFieldCandidate(value=None, source=None)
 
-    return HeuristicFieldCandidate(value=vendor, source="header_vendor")
+    return HeuristicFieldCandidate(
+        value=vendor,
+        source="header_vendor",
+        evidence=(vendor,),
+    )
 
 
 def _extract_money_values(line: str) -> list[float]:
@@ -1165,7 +1210,7 @@ def _infer_category_from_ocr(
     *,
     vendor: str | None = None,
     line_items: list[ExtractedLineItem] | None = None,
-) -> str | None:
+) -> tuple[str | None, tuple[str, ...]]:
     normalized_text = ocr_text.lower()
     normalized_vendor = (vendor or "").lower()
     line_item_text = " ".join(item.description.lower() for item in line_items or [])
@@ -1228,19 +1273,19 @@ def _infer_category_from_ocr(
                 )
 
     if not scores:
-        return None
+        return None, ()
 
     ranked_categories = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     best_category, best_score = ranked_categories[0]
     second_score = ranked_categories[1][1] if len(ranked_categories) > 1 else 0
 
     if best_score < 2:
-        return None
+        return None, ()
 
     if best_score - second_score < 2 and best_score < 7:
-        return None
+        return None, ()
 
-    return best_category
+    return best_category, tuple(reasons.get(best_category, ())[:3])
 
 
 def _extract_category_candidate(
@@ -1249,7 +1294,7 @@ def _extract_category_candidate(
     vendor: str | None = None,
     line_items: list[ExtractedLineItem] | None = None,
 ) -> HeuristicFieldCandidate:
-    category = _infer_category_from_ocr(
+    category, evidence = _infer_category_from_ocr(
         ocr_text,
         vendor=vendor,
         line_items=line_items,
@@ -1257,7 +1302,11 @@ def _extract_category_candidate(
     if not category:
         return HeuristicFieldCandidate(value=None, source=None)
 
-    return HeuristicFieldCandidate(value=category, source="keyword_inference")
+    return HeuristicFieldCandidate(
+        value=category,
+        source="keyword_inference",
+        evidence=evidence,
+    )
 
 
 def _build_heuristic_candidates(ocr_text: str) -> HeuristicExtractionCandidates:
@@ -1291,7 +1340,13 @@ def _build_heuristic_candidates(ocr_text: str) -> HeuristicExtractionCandidates:
             value=payment_method,
             source=payment_method_source,
         ),
-        line_items=HeuristicFieldCandidate(value=line_items, source="line_item_rows"),
+        line_items=HeuristicFieldCandidate(
+            value=line_items,
+            source="line_item_rows",
+            evidence=(f"Detected {len(line_items)} itemized row(s)",)
+            if line_items
+            else (),
+        ),
     )
 
 
@@ -1300,6 +1355,72 @@ def _amounts_match(first: float | None, second: float | None) -> bool:
         return False
 
     return abs(first - second) <= 0.01
+
+
+def _normalize_comparable_value(value: object) -> object:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, float):
+        return round(value, 2)
+    if isinstance(value, list):
+        normalized_items = []
+        for item in value:
+            if isinstance(item, ExtractedLineItem):
+                normalized_items.append(
+                    {
+                        "description": item.description,
+                        "quantity": _normalize_comparable_value(item.quantity),
+                        "unit_price": _normalize_comparable_value(item.unit_price),
+                        "line_total": _normalize_comparable_value(item.line_total),
+                    }
+                )
+            else:
+                normalized_items.append(_normalize_comparable_value(item))
+        return normalized_items
+    return value
+
+
+def _field_values_match(first: object, second: object) -> bool:
+    return _normalize_comparable_value(first) == _normalize_comparable_value(second)
+
+
+def _build_field_provenance(
+    source: str,
+    *,
+    details_suffix: str | None = None,
+) -> ExtractedFieldProvenance:
+    label, details = PROVENANCE_LABELS.get(
+        source,
+        ("Derived value", "Derived this value from the receipt text."),
+    )
+    if details_suffix:
+        details = f"{details} {details_suffix}".strip()
+
+    return ExtractedFieldProvenance(
+        source=source,
+        label=label,
+        details=details,
+    )
+
+
+def _maybe_attach_evidence(
+    provenance: ExtractedFieldProvenance,
+    evidence: tuple[str, ...],
+) -> ExtractedFieldProvenance:
+    if not evidence:
+        return provenance
+
+    evidence_text = "; ".join(item for item in evidence if item)[:240]
+    if not evidence_text:
+        return provenance
+
+    return provenance.model_copy(
+        update={
+            "details": f"{provenance.details} Evidence: {evidence_text}",
+        }
+    )
 
 
 def _heuristics_to_fields(
@@ -1358,6 +1479,61 @@ def _apply_vendor_learning_hint(
             "line_items": extracted_fields.line_items,
         }
     )
+
+
+def _build_extraction_provenance(
+    *,
+    pre_learning_fields: ExtractedExpenseFields,
+    final_fields: ExtractedExpenseFields,
+    heuristic_candidates: HeuristicExtractionCandidates,
+) -> ExtractionProvenance:
+    field_names = (
+        "vendor",
+        "amount",
+        "date",
+        "category",
+        "subtotal",
+        "tax_amount",
+        "receipt_number",
+        "due_date",
+        "payment_method",
+        "line_items",
+    )
+
+    provenance_payload: dict[str, ExtractedFieldProvenance] = {}
+    for field_name in field_names:
+        final_value = getattr(final_fields, field_name)
+        if final_value in (None, "", []):
+            continue
+
+        pre_learning_value = getattr(pre_learning_fields, field_name)
+        heuristic_candidate = getattr(heuristic_candidates, field_name)
+
+        if field_name == "vendor" and not _field_values_match(
+            final_value, pre_learning_value
+        ):
+            provenance_payload[field_name] = _build_field_provenance("learned_vendor")
+            continue
+
+        if field_name == "category" and not _field_values_match(
+            final_value, pre_learning_value
+        ):
+            provenance_payload[field_name] = _build_field_provenance("learned_category")
+            continue
+
+        if heuristic_candidate.source and _field_values_match(
+            final_value,
+            heuristic_candidate.value,
+        ):
+            provenance_payload[field_name] = _maybe_attach_evidence(
+                _build_field_provenance(heuristic_candidate.source),
+                heuristic_candidate.evidence,
+            )
+            continue
+
+        provenance_payload[field_name] = _build_field_provenance("ai_extraction")
+
+    return ExtractionProvenance.model_validate(provenance_payload)
 
 
 def _merge_hybrid_extraction(
@@ -1461,14 +1637,22 @@ def _merge_hybrid_extraction(
     )
 
 
-def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
+def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     settings = get_settings()
     heuristic_candidates = _build_heuristic_candidates(ocr_text)
     heuristic_fields = _heuristics_to_fields(heuristic_candidates)
 
     if not settings.openai_api_key:
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1503,7 +1687,15 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
             detail = error_body or "OpenAI request failed."
 
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1511,7 +1703,15 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         ) from exc
     except error.URLError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1522,14 +1722,30 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         response_text = _extract_output_text(response_payload)
     except HTTPException as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
         raise exc
 
     try:
         parsed_output = json.loads(response_text)
     except json.JSONDecodeError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1540,13 +1756,37 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         extracted_fields = ExtractedExpenseFields.validate_llm_output(parsed_output)
     except ValueError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return _apply_vendor_learning_hint(heuristic_fields)
+            final_fields = _apply_vendor_learning_hint(heuristic_fields)
+            return ExtractionOutcome(
+                fields=final_fields,
+                provenance=_build_extraction_provenance(
+                    pre_learning_fields=heuristic_fields,
+                    final_fields=final_fields,
+                    heuristic_candidates=heuristic_candidates,
+                ),
+            )
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 
-    return _apply_vendor_learning_hint(
-        _merge_hybrid_extraction(extracted_fields, heuristic_candidates, ocr_text)
+    merged_fields = _merge_hybrid_extraction(
+        extracted_fields,
+        heuristic_candidates,
+        ocr_text,
     )
+    final_fields = _apply_vendor_learning_hint(merged_fields)
+
+    return ExtractionOutcome(
+        fields=final_fields,
+        provenance=_build_extraction_provenance(
+            pre_learning_fields=merged_fields,
+            final_fields=final_fields,
+            heuristic_candidates=heuristic_candidates,
+        ),
+    )
+
+
+def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
+    return extract_expense_data(ocr_text).fields
