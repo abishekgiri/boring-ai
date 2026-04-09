@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.db.database import initialize_database
+from app.routes.expenses import router as expenses_router
 from app.routes.uploads import router as uploads_router
 
 
@@ -33,6 +34,7 @@ app.mount(
     StaticFiles(directory=settings.uploads_files_dir),
     name="uploads",
 )
+app.include_router(expenses_router)
 app.include_router(uploads_router)
 
 
