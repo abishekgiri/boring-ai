@@ -131,6 +131,70 @@ Use [`./.env.example`](./.env.example) as the starting point.
 
 ---
 
+## Deploy with Render and Vercel
+
+The cleanest setup for the current codebase is:
+
+- Render for the FastAPI backend
+- Vercel for the Next.js frontend
+
+This repo includes [`render.yaml`](./render.yaml) for the backend side.
+
+### Why this split makes sense
+
+- the frontend is a standard Next.js app, which fits Vercel well
+- the backend needs OCR system packages like Tesseract and Poppler, which is why the Render backend uses Docker
+- the backend also needs persistent storage for SQLite and uploaded files
+
+### Render backend
+
+The Render backend uses:
+
+- [`render.yaml`](./render.yaml)
+- [`backend/Dockerfile`](./backend/Dockerfile)
+- one persistent disk mounted for uploads and SQLite
+
+#### Render setup steps
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint and select this repository.
+3. Let Render detect [`render.yaml`](./render.yaml).
+4. Fill in the required environment variables:
+   - `OPENAI_API_KEY`
+   - `BACKEND_CORS_ORIGINS`
+5. Deploy the backend service.
+
+#### Render values to set
+
+- `BACKEND_CORS_ORIGINS`
+  Set this to your Vercel frontend URL, for example `https://boring-ai.vercel.app`
+
+### Vercel frontend
+
+For Vercel, import the same GitHub repository and set the project root directory to `frontend`.
+
+#### Vercel setup steps
+
+1. In Vercel, create a new project from this repository.
+2. Set the root directory to `frontend`.
+3. Add the environment variable:
+   - `NEXT_PUBLIC_API_BASE_URL`
+4. Deploy the frontend.
+
+#### Vercel value to set
+
+- `NEXT_PUBLIC_API_BASE_URL`
+  Set this to your Render backend URL, for example `https://boring-ai-api.onrender.com`
+
+### Important notes
+
+- the backend is on a paid Render plan because persistent disk is required for SQLite and uploads
+- the backend will not have zero-downtime deploys while that persistent disk is attached
+- Vercel preview deployments will need matching backend CORS rules if you want previews to talk to the live backend
+- this is a solid early deployment setup, but a later production setup should move from SQLite plus local uploads to Postgres plus object storage
+
+---
+
 ## API overview
 
 ### System

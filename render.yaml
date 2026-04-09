@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: boring-ai-api
+    runtime: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: backend/Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: BACKEND_CORS_ORIGINS
+        sync: false
+      - key: SQLITE_DATABASE_PATH
+        value: /opt/render/project/src/backend/uploads/boring-ai.db
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_API_BASE_URL
+        value: https://api.openai.com/v1
+      - key: OPENAI_TIMEOUT_SECONDS
+        value: "30"
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/backend/uploads
+      sizeGB: 1
