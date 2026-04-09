@@ -160,3 +160,18 @@ def list_expenses(
         rows = connection.execute(query, parameters).fetchall()
 
     return [_row_to_expense(row) for row in rows]
+
+
+def delete_expense_by_id(expense_id: int) -> None:
+    with closing(_get_connection()) as connection:
+        cursor = connection.execute(
+            "DELETE FROM expenses WHERE id = ?",
+            (expense_id,),
+        )
+        connection.commit()
+
+    if cursor.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Expense not found.",
+        )

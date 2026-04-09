@@ -53,9 +53,10 @@ function buildExpensesUrl(search, category, dateFrom, dateTo) {
   }
 
   const queryString = params.toString();
+  const basePath = `${apiBaseUrl}/api/expenses`;
   return queryString
-    ? `${apiBaseUrl}/api/expenses?${queryString}`
-    : `${apiBaseUrl}/api/expenses`;
+    ? `${basePath}?${queryString}`
+    : basePath;
 }
 
 function LoadingRows() {
@@ -73,6 +74,9 @@ function LoadingRows() {
       <td className="px-4 py-4">
         <div className="h-4 w-24 animate-pulse rounded-full bg-stone-200" />
       </td>
+      <td className="px-4 py-4">
+        <div className="h-9 w-20 animate-pulse rounded-full bg-stone-200" />
+      </td>
     </tr>
   ));
 }
@@ -81,11 +85,15 @@ export default function ExpensesPage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState("");
+  const [deleteSuccessMessage, setDeleteSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeletingExpenseId, setIsDeletingExpenseId] = useState(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   const deferredSearch = useDeferredValue(search.trim());
   const hasActiveFilters = Boolean(
@@ -140,7 +148,44 @@ export default function ExpensesPage() {
     return () => {
       controller.abort();
     };
-  }, [deferredSearch, category, dateFrom, dateTo]);
+  }, [deferredSearch, category, dateFrom, dateTo, reloadKey]);
+
+  async function handleDeleteExpense(expense) {
+    const confirmed = window.confirm(
+      `Delete expense "${expense.vendor}" from the workspace?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingExpenseId(expense.id);
+    setDeleteErrorMessage("");
+    setDeleteSuccessMessage("");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/expenses/${expense.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.detail ?? "Unable to delete the expense. Please try again."
+        );
+      }
+
+      setDeleteSuccessMessage(`Deleted expense #${expense.id}.`);
+      setReloadKey((current) => current + 1);
+    } catch (error) {
+      setDeleteErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete the expense. Please try again."
+      );
+    } finally {
+      setIsDeletingExpenseId(null);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.18),_transparent_28%),linear-gradient(180deg,_#fff8ef_0%,_#f5ead9_50%,_#eadbc4_100%)] px-4 py-6 text-stone-950 sm:px-6 lg:px-8">
@@ -148,14 +193,14 @@ export default function ExpensesPage() {
         <header className="mb-8 flex flex-col gap-5 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 6 in progress
+              Phase 6 workspace + actions
             </p>
             <h1 className="font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               Expense workspace
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
               Browse saved expenses, search vendors, filter by category or date,
-              and find what matters quickly.
+              and remove bad records without leaving the workspace.
             </p>
           </div>
 
@@ -195,6 +240,8 @@ export default function ExpensesPage() {
                   setCategory("");
                   setDateFrom("");
                   setDateTo("");
+                  setDeleteErrorMessage("");
+                  setDeleteSuccessMessage("");
                 }}
                 type="button"
               >
@@ -285,6 +332,18 @@ export default function ExpensesPage() {
             </div>
           ) : null}
 
+          {deleteErrorMessage ? (
+            <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
+              {deleteErrorMessage}
+            </div>
+          ) : null}
+
+          {deleteSuccessMessage ? (
+            <div className="mt-6 rounded-2xl border border-emerald-900/10 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950">
+              {deleteSuccessMessage}
+            </div>
+          ) : null}
+
           {!errorMessage && !isLoading && total === 0 ? (
             <div className="mt-6 rounded-[1.5rem] border border-dashed border-stone-900/10 bg-stone-50/80 px-6 py-10 text-center">
               <h3 className="font-serif text-2xl tracking-tight text-stone-950">
@@ -327,6 +386,9 @@ export default function ExpensesPage() {
                     <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em]">
                       Category
                     </th>
+                    <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em]">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -356,6 +418,18 @@ export default function ExpensesPage() {
                           <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-950">
                             {expense.category}
                           </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <button
+                            className="inline-flex min-h-10 items-center justify-center rounded-full border border-rose-900/10 bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-400"
+                            disabled={isDeletingExpenseId === expense.id}
+                            onClick={() => handleDeleteExpense(expense)}
+                            type="button"
+                          >
+                            {isDeletingExpenseId === expense.id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
                         </td>
                       </tr>
                     ))

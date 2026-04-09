@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.config import get_settings
 from app.db.database import (
+    delete_expense_by_id,
     get_expense_by_id,
     insert_expense,
     list_expenses,
@@ -120,6 +121,12 @@ def export_expenses(
             "Content-Disposition": 'attachment; filename="boring-ai-expenses.csv"',
         },
     )
+
+
+@router.delete("/{expense_id}", status_code=204)
+def delete_expense(expense_id: int) -> Response:
+    delete_expense_by_id(expense_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{expense_id}", response_model=ExpenseRecord)
