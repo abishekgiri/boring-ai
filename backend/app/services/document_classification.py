@@ -45,7 +45,7 @@ def _collect_matches(text: str, patterns: tuple[tuple[str, int, str], ...]) -> t
     positives: list[str] = []
 
     for pattern, weight, description in patterns:
-        if re.search(pattern, text, flags=re.IGNORECASE):
+        if re.search(pattern, text):
             score += weight
             positives.append(description)
 
