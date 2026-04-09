@@ -56,6 +56,16 @@ const SIGNAL_THEMES = {
     label: "Low",
   },
 };
+const CATEGORY_KEYWORDS = {
+  meals: ["restaurant", "cafe", "coffee", "meal", "food", "lunch", "dinner"],
+  travel: ["hotel", "flight", "airline", "trip", "airbnb"],
+  software: ["software", "subscription", "saas", "github", "vercel", "render", "openai", "aws"],
+  office: ["office", "supplies", "printer", "paper", "staples"],
+  shopping: ["walmart", "target", "amazon", "market", "store", "retail"],
+  transport: ["uber", "lyft", "taxi", "parking", "toll", "fuel", "repair", "brake", "pedal", "auto", "vehicle"],
+  lodging: ["hotel", "motel", "inn", "suite", "hostel"],
+  utilities: ["internet", "phone", "wireless", "electric", "water", "utility"],
+};
 
 function createEmptyExtractedFields() {
   return {
@@ -174,6 +184,295 @@ function buildReviewHints(fields) {
   }
 
   return hints;
+}
+
+function normalizeComparableText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeFieldValue(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function includesComparableText(haystack, needle) {
+  const normalizedHaystack = normalizeComparableText(haystack);
+  const normalizedNeedle = normalizeComparableText(needle);
+  if (!normalizedNeedle) {
+    return false;
+  }
+
+  return normalizedHaystack.includes(normalizedNeedle);
+}
+
+function buildAmountCandidates(amountValue) {
+  const parsedAmount = Number(amountValue);
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    return [];
+  }
+
+  const fixed = parsedAmount.toFixed(2);
+  const noTrailingZeros = fixed.replace(/\.00$/, "");
+
+  return Array.from(
+    new Set([
+      fixed,
+      noTrailingZeros,
+      `$${fixed}`,
+      `$${noTrailingZeros}`,
+    ])
+  );
+}
+
+function buildDateCandidates(dateValue) {
+  if (!dateValue) {
+    return [];
+  }
+
+  const [year, month, day] = String(dateValue).split("-");
+  if (!year || !month || !day) {
+    return [String(dateValue)];
+  }
+
+  const monthNumber = String(Number(month));
+  const dayNumber = String(Number(day));
+
+  return Array.from(
+    new Set([
+      `${year}-${month}-${day}`,
+      `${month}/${day}/${year}`,
+      `${monthNumber}/${dayNumber}/${year}`,
+      `${month}-${day}-${year}`,
+      `${monthNumber}-${dayNumber}-${year}`,
+    ])
+  );
+}
+
+function buildFieldConfidence(ocrText, fields, ocrAssessment, snapshot) {
+  if (!fields) {
+    return null;
+  }
+
+  const nonEmptyLines = String(ocrText ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const topLines = nonEmptyLines.slice(0, 6);
+  const normalizedOcr = normalizeComparableText(ocrText);
+
+  function applyEditedOverride(fieldName, confidence) {
+    const originalValue = snapshot?.[fieldName];
+    const currentValue = fields?.[fieldName];
+
+    if (!normalizeFieldValue(currentValue)) {
+      return confidence;
+    }
+
+    if (
+      normalizeFieldValue(originalValue) &&
+      normalizeFieldValue(originalValue) !== normalizeFieldValue(currentValue)
+    ) {
+      return {
+        level: "caution",
+        badge: "Reviewed manually",
+        reason:
+          "You changed this field after extraction, so this value now depends on your review rather than the original model guess.",
+      };
+    }
+
+    return confidence;
+  }
+
+  function maybeDowngradeFromWeakOcr(confidence) {
+    if (!confidence) {
+      return confidence;
+    }
+
+    if (ocrAssessment?.level === "warning" && confidence.level === "strong") {
+      return {
+        ...confidence,
+        level: "caution",
+        badge: "Medium confidence",
+        reason: `${confidence.reason} OCR quality looked weak, so this field should still be reviewed carefully.`,
+      };
+    }
+
+    return confidence;
+  }
+
+  function buildVendorConfidence() {
+    if (!fields.vendor.trim()) {
+      return {
+        level: "warning",
+        badge: "Low confidence",
+        reason: "Vendor is missing, so there is nothing trustworthy to save yet.",
+      };
+    }
+
+    if (topLines.some((line) => includesComparableText(line, fields.vendor))) {
+      return {
+        level: "strong",
+        badge: "High confidence",
+        reason: "Vendor matches the receipt header area, which is usually the strongest source for the merchant name.",
+      };
+    }
+
+    if (nonEmptyLines.some((line) => includesComparableText(line, fields.vendor))) {
+      return {
+        level: "caution",
+        badge: "Medium confidence",
+        reason: "Vendor appears somewhere in the OCR text, but not clearly in the top header lines.",
+      };
+    }
+
+    return {
+      level: "warning",
+      badge: "Low confidence",
+      reason: "Vendor does not clearly match the OCR text, so it may have been inferred incorrectly.",
+    };
+  }
+
+  function buildAmountConfidence() {
+    if (!fields.amount) {
+      return {
+        level: "warning",
+        badge: "Low confidence",
+        reason: "Amount is missing, so the draft still needs a human to fill in the final total.",
+      };
+    }
+
+    const candidates = buildAmountCandidates(fields.amount);
+    const totalLine = nonEmptyLines.find((line) =>
+      /(receipt total|grand total|amount due|total due|total)/i.test(line)
+    );
+
+    if (
+      totalLine &&
+      candidates.some((candidate) => totalLine.includes(candidate))
+    ) {
+      return {
+        level: "strong",
+        badge: "High confidence",
+        reason: "Amount matches a total-like line in the OCR text, which is the strongest indicator for the final charge.",
+      };
+    }
+
+    if (
+      candidates.some((candidate) => normalizedOcr.includes(candidate.toLowerCase()))
+    ) {
+      return {
+        level: "caution",
+        badge: "Medium confidence",
+        reason: "Amount appears in the OCR text, but not on a clearly labeled total line.",
+      };
+    }
+
+    return {
+      level: "warning",
+      badge: "Low confidence",
+      reason: "Amount is not clearly supported by the OCR text, so it may be incorrect.",
+    };
+  }
+
+  function buildDateConfidence() {
+    if (!fields.date) {
+      return {
+        level: "warning",
+        badge: "Low confidence",
+        reason: "Date is missing, so the receipt still needs a manual date review.",
+      };
+    }
+
+    const candidates = buildDateCandidates(fields.date);
+    const dateLine = nonEmptyLines.find((line) =>
+      /(receipt date|invoice date|date|issued|due date)/i.test(line)
+    );
+
+    if (
+      dateLine &&
+      candidates.some((candidate) => dateLine.includes(candidate))
+    ) {
+      return {
+        level: "strong",
+        badge: "High confidence",
+        reason: "Date matches a date-like line in the OCR output, which is a strong signal for the receipt date.",
+      };
+    }
+
+    if (
+      candidates.some((candidate) => normalizedOcr.includes(candidate.toLowerCase()))
+    ) {
+      return {
+        level: "caution",
+        badge: "Medium confidence",
+        reason: "Date appears in the OCR text, but not on a clearly labeled date line.",
+      };
+    }
+
+    return {
+      level: "warning",
+      badge: "Low confidence",
+      reason: "Date is not clearly supported by the OCR text and may have been inferred loosely.",
+    };
+  }
+
+  function buildCategoryConfidence() {
+    if (!fields.category) {
+      return {
+        level: "warning",
+        badge: "Low confidence",
+        reason: "Category is still empty, so it needs a human decision before save.",
+      };
+    }
+
+    const keywords = CATEGORY_KEYWORDS[fields.category] ?? [];
+    const matches = keywords.filter((keyword) =>
+      normalizedOcr.includes(keyword)
+    );
+
+    if (matches.length >= 2) {
+      return {
+        level: "strong",
+        badge: "High confidence",
+        reason: `Category is supported by multiple OCR keywords (${matches.slice(0, 2).join(", ")}).`,
+      };
+    }
+
+    if (matches.length === 1) {
+      return {
+        level: "caution",
+        badge: "Medium confidence",
+        reason: `Category is supported by one OCR keyword (${matches[0]}), but still deserves a quick review.`,
+      };
+    }
+
+    return {
+      level: "warning",
+      badge: "Low confidence",
+      reason: "Category is not clearly supported by OCR keywords, so it may be a fuzzy guess.",
+    };
+  }
+
+  return {
+    vendor: applyEditedOverride(
+      "vendor",
+      maybeDowngradeFromWeakOcr(buildVendorConfidence())
+    ),
+    amount: applyEditedOverride(
+      "amount",
+      maybeDowngradeFromWeakOcr(buildAmountConfidence())
+    ),
+    date: applyEditedOverride(
+      "date",
+      maybeDowngradeFromWeakOcr(buildDateConfidence())
+    ),
+    category: applyEditedOverride(
+      "category",
+      maybeDowngradeFromWeakOcr(buildCategoryConfidence())
+    ),
+  };
 }
 
 function buildOcrAssessment(ocrText) {
@@ -411,6 +710,24 @@ function SignalIcon({ level }) {
   );
 }
 
+function FieldConfidenceBadge({ confidence }) {
+  if (!confidence) {
+    return null;
+  }
+
+  const theme = SIGNAL_THEMES[confidence.level];
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${theme.badge}`}
+      title={confidence.reason}
+    >
+      <SignalIcon level={confidence.level} />
+      {confidence.badge}
+    </span>
+  );
+}
+
 function AssessmentPanel({ assessment, eyebrow }) {
   if (!assessment) {
     return null;
@@ -555,6 +872,9 @@ export default function UploadForm({ apiBaseUrl }) {
   const [extractedFields, setExtractedFields] = useState(
     createEmptyExtractedFields()
   );
+  const [lastExtractedSnapshot, setLastExtractedSnapshot] = useState(
+    createEmptyExtractedFields()
+  );
   const [uploadErrorMessage, setUploadErrorMessage] = useState("");
   const [ocrErrorMessage, setOcrErrorMessage] = useState("");
   const [extractionErrorMessage, setExtractionErrorMessage] = useState("");
@@ -587,6 +907,7 @@ export default function UploadForm({ apiBaseUrl }) {
   function resetDerivedState() {
     setOcrText("");
     setExtractedFields(createEmptyExtractedFields());
+    setLastExtractedSnapshot(createEmptyExtractedFields());
     setOcrErrorMessage("");
     setExtractionErrorMessage("");
     setSaveErrorMessage("");
@@ -700,6 +1021,7 @@ export default function UploadForm({ apiBaseUrl }) {
       setUploadedFile(payload);
       setOcrText(payload.ocr_text ?? "");
       setExtractedFields(mapExtractedFields(payload.extracted_fields));
+      setLastExtractedSnapshot(mapExtractedFields(payload.extracted_fields));
       setStatusMessage("Upload complete. Run OCR to see exactly what the receipt text looks like.");
     } catch (error) {
       setUploadedFile(null);
@@ -724,6 +1046,7 @@ export default function UploadForm({ apiBaseUrl }) {
     setSaveErrorMessage("");
     setSavedExpense(null);
     setExtractedFields(createEmptyExtractedFields());
+    setLastExtractedSnapshot(createEmptyExtractedFields());
     setStatusMessage("Extracting raw text from the stored receipt...");
 
     try {
@@ -802,7 +1125,9 @@ export default function UploadForm({ apiBaseUrl }) {
           : current
       );
       setOcrText(payload?.ocr_text ?? ocrText);
-      setExtractedFields(mapExtractedFields(payload?.extracted_fields));
+      const nextFields = mapExtractedFields(payload?.extracted_fields);
+      setExtractedFields(nextFields);
+      setLastExtractedSnapshot(nextFields);
       setStatusMessage(
         "AI extraction complete. Review the fields below, then save the expense if everything looks right."
       );
@@ -881,6 +1206,12 @@ export default function UploadForm({ apiBaseUrl }) {
   const extractionAssessment = buildExtractionAssessment(
     extractedFields,
     ocrAssessment
+  );
+  const fieldConfidence = buildFieldConfidence(
+    ocrText,
+    extractedFields,
+    ocrAssessment,
+    lastExtractedSnapshot
   );
   const shouldWarnBeforeSave =
     extractionAssessment?.level === "warning" && !savedExpense;
@@ -1183,9 +1514,12 @@ export default function UploadForm({ apiBaseUrl }) {
         {hasExtractedFields || isExtractingFields ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Vendor
-              </span>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  Vendor
+                </span>
+                <FieldConfidenceBadge confidence={fieldConfidence?.vendor} />
+              </div>
               <input
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
                 disabled={isExtractingFields}
@@ -1196,12 +1530,20 @@ export default function UploadForm({ apiBaseUrl }) {
                 type="text"
                 value={extractedFields.vendor}
               />
+              {fieldConfidence?.vendor ? (
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  {fieldConfidence.vendor.reason}
+                </p>
+              ) : null}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Amount
-              </span>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  Amount
+                </span>
+                <FieldConfidenceBadge confidence={fieldConfidence?.amount} />
+              </div>
               <input
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
                 disabled={isExtractingFields}
@@ -1213,12 +1555,20 @@ export default function UploadForm({ apiBaseUrl }) {
                 type="number"
                 value={extractedFields.amount}
               />
+              {fieldConfidence?.amount ? (
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  {fieldConfidence.amount.reason}
+                </p>
+              ) : null}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Date
-              </span>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  Date
+                </span>
+                <FieldConfidenceBadge confidence={fieldConfidence?.date} />
+              </div>
               <input
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
                 disabled={isExtractingFields}
@@ -1228,12 +1578,20 @@ export default function UploadForm({ apiBaseUrl }) {
                 type="date"
                 value={extractedFields.date}
               />
+              {fieldConfidence?.date ? (
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  {fieldConfidence.date.reason}
+                </p>
+              ) : null}
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Category
-              </span>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  Category
+                </span>
+                <FieldConfidenceBadge confidence={fieldConfidence?.category} />
+              </div>
               <select
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
                 disabled={isExtractingFields}
@@ -1249,6 +1607,11 @@ export default function UploadForm({ apiBaseUrl }) {
                   </option>
                 ))}
               </select>
+              {fieldConfidence?.category ? (
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  {fieldConfidence.category.reason}
+                </p>
+              ) : null}
             </label>
           </div>
         ) : null}
