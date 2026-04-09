@@ -5,6 +5,9 @@ Self-hosted AI receipt processing for freelancers.
 `boring-ai` turns messy receipts into structured expenses you can review, fix,
 save, search, edit, and export.
 
+Upload receipts -> extract structured data -> review -> save.
+No SaaS. No lock-in. Full control.
+
 ## Core workflow
 
 ```text
@@ -31,9 +34,11 @@ first-run path:
 - Extract raw text with Tesseract OCR
 - Convert OCR text into structured fields with AI
 - Keep the extracted fields editable before save
+- Show OCR and extraction confidence signals so users know when to trust the draft and when to review it carefully
 - Store expenses in SQLite
 - Browse saved expenses in a workspace
 - Search and filter by vendor, category, and date
+- Open saved expenses in a detail view and edit them later
 - Export filtered expenses to CSV
 - Delete bad records
 
@@ -46,6 +51,26 @@ they still need a reliable flow for capturing expenses, checking AI output, and
 exporting clean data later.
 
 `boring-ai` is focused on that narrow workflow.
+
+Most AI expense tools are expensive, closed, or not truly self-hosted.
+
+`boring-ai` aims for something simpler:
+
+- transparent
+- local-first
+- human-in-the-loop
+- built for real bookkeeping handoff, not just a flashy demo
+
+## Trust-first design
+
+Instead of hiding uncertainty, `boring-ai` surfaces it:
+
+- `High confidence` means the OCR or extraction looks healthy enough to be a strong save candidate
+- `Medium confidence` means the draft is usable, but review is recommended
+- `Low confidence` means the draft probably needs human correction before save
+
+The goal is not to pretend the model is always right. The goal is to keep the
+user in control.
 
 ## Demo receipt
 
@@ -92,6 +117,26 @@ What is intentionally not here yet:
 - bank imports
 - complex dashboards
 - background job systems
+
+## Tech stack
+
+- Frontend: Next.js
+- Backend: FastAPI
+- OCR: Tesseract with PDF support through Poppler/pdf2image
+- Extraction: LLM-based parsing with OpenAI-compatible APIs
+- Database: SQLite
+- Deployment: Vercel for the frontend, Render for the backend
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Upload["Upload receipt"] --> OCR["OCR"]
+  OCR --> Extract["LLM extraction"]
+  Extract --> Review["Review and edit UI"]
+  Review --> Save["SQLite expense record"]
+  Save --> Workspace["Workspace, detail view, and export"]
+```
 
 ## Quick start
 
