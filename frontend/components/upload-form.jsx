@@ -1542,6 +1542,7 @@ export default function UploadForm({ apiBaseUrl }) {
               ocr_text: payload?.text ?? "",
               extracted_fields: null,
               extraction_provenance: null,
+              field_confidence: null,
               document_classification: nextClassification,
             }
           : current
@@ -1609,6 +1610,7 @@ export default function UploadForm({ apiBaseUrl }) {
               ocr_text: payload?.ocr_text ?? current.ocr_text,
               extracted_fields: payload?.extracted_fields ?? null,
               extraction_provenance: payload?.extraction_provenance ?? null,
+              field_confidence: payload?.field_confidence ?? null,
               document_classification:
                 payload?.document_classification ??
                 current.document_classification ??
