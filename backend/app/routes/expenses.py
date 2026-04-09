@@ -132,8 +132,8 @@ def _get_filtered_expenses(
             enriched_items,
             key=lambda item: (
                 _review_rank(item.review_level),
-                item.date.toordinal(),
-                item.created_at.timestamp(),
+                item.date.toordinal() if reverse else -item.date.toordinal(),
+                item.created_at.timestamp() if reverse else -item.created_at.timestamp(),
             ),
             reverse=reverse,
         )
