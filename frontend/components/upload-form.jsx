@@ -30,6 +30,32 @@ const WORKFLOW_STEPS = [
   "Store it locally, then run OCR to inspect the raw text.",
   "Extract editable fields, review them, and save the expense.",
 ];
+const SIGNAL_THEMES = {
+  strong: {
+    container: "border-emerald-900/10 bg-emerald-50/80 text-emerald-950",
+    badge: "border-emerald-900/10 bg-white text-emerald-900",
+    accent: "bg-emerald-600",
+    eyebrow: "text-emerald-700",
+    icon: "border-emerald-900/10 bg-white text-emerald-700",
+    label: "High",
+  },
+  caution: {
+    container: "border-amber-900/10 bg-amber-50/80 text-amber-950",
+    badge: "border-amber-900/10 bg-white text-amber-900",
+    accent: "bg-amber-600",
+    eyebrow: "text-amber-700",
+    icon: "border-amber-900/10 bg-white text-amber-700",
+    label: "Medium",
+  },
+  warning: {
+    container: "border-rose-900/10 bg-rose-50/80 text-rose-950",
+    badge: "border-rose-900/10 bg-white text-rose-900",
+    accent: "bg-rose-600",
+    eyebrow: "text-rose-700",
+    icon: "border-rose-900/10 bg-white text-rose-700",
+    label: "Low",
+  },
+};
 
 function createEmptyExtractedFields() {
   return {
@@ -148,6 +174,315 @@ function buildReviewHints(fields) {
   }
 
   return hints;
+}
+
+function buildOcrAssessment(ocrText) {
+  if (!ocrText) {
+    return null;
+  }
+
+  const normalized = ocrText.toLowerCase();
+  const nonEmptyLines = ocrText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const positives = [];
+  const warnings = [];
+  let score = 0;
+
+  if (nonEmptyLines.length >= 6 || ocrText.length >= 160) {
+    score += 1;
+    positives.push("OCR captured enough text to compare the draft against the receipt.");
+  } else {
+    warnings.push("OCR output is short. The receipt may be cropped, faint, or hard to read.");
+  }
+
+  if (/(receipt total|total|amount due|subtotal|balance due)/i.test(normalized)) {
+    score += 1;
+    positives.push("A total-related line was detected in the OCR text.");
+  } else {
+    warnings.push("No strong total keyword was found. Double-check the final amount before saving.");
+  }
+
+  if (/(receipt date|invoice date|issued|date|due date)/i.test(normalized)) {
+    score += 1;
+    positives.push("A date-related line was detected in the OCR text.");
+  } else {
+    warnings.push("No clear date keyword was found. Expect the receipt date to need manual review.");
+  }
+
+  const unusualCharacterCount = (ocrText.match(/[{}[\]|~_^]/g) || []).length;
+  if (unusualCharacterCount >= 4) {
+    warnings.push("The OCR text contains several unusual characters, which usually means the scan quality is weak.");
+  } else if (nonEmptyLines.length >= 6) {
+    score += 1;
+    positives.push("Character quality looks reasonably clean for a first pass.");
+  }
+
+  let level = "warning";
+  if (score >= 3 && warnings.length === 0) {
+    level = "strong";
+  } else if (score >= 2) {
+    level = "caution";
+  }
+
+  if (level === "strong") {
+    return {
+      level,
+      badge: "High OCR confidence",
+      reason:
+        "Detected enough readable text plus clear total and date cues, so the extraction step has strong source material.",
+      summary: "The raw text looks healthy enough for the extraction step to be trustworthy, but you should still spot-check the total and date.",
+      positives,
+      warnings,
+    };
+  }
+
+  if (level === "caution") {
+    return {
+      level,
+      badge: "Review OCR carefully",
+      reason:
+        "Detected usable OCR text, but one or more important cues look incomplete or slightly noisy.",
+      summary: "The OCR result is usable, but there are some weak spots. Expect at least one field to need manual confirmation.",
+      positives,
+      warnings,
+    };
+  }
+
+  return {
+    level,
+    badge: "Low OCR confidence",
+    reason:
+      "Detected short or noisy OCR text, missing amount or date cues, or too many unusual characters.",
+    summary: "The raw text looks noisy. Treat the next extraction draft as a starting point, not a final answer.",
+    positives,
+    warnings,
+  };
+}
+
+function buildExtractionAssessment(fields, ocrAssessment) {
+  const populatedCount = Object.values(fields).filter(Boolean).length;
+
+  if (!populatedCount) {
+    return null;
+  }
+
+  const positives = [];
+  const warnings = [];
+
+  if (fields.vendor.trim()) {
+    positives.push("Vendor is populated.");
+  } else {
+    warnings.push("Vendor is missing. Compare the merchant header before saving.");
+  }
+
+  if (fields.amount) {
+    positives.push("A total amount is present.");
+  } else {
+    warnings.push("Amount is missing. Check the final total or subtotal plus tax.");
+  }
+
+  if (fields.date) {
+    positives.push("Receipt date is populated.");
+  } else {
+    warnings.push("Date is missing. Add it manually if the receipt shows one.");
+  }
+
+  if (fields.category) {
+    positives.push("Category is selected.");
+  } else {
+    warnings.push("Category still needs a human decision.");
+  }
+
+  if (ocrAssessment?.level === "warning") {
+    warnings.push("The OCR step looked weak, so this draft needs a careful human review.");
+  } else if (ocrAssessment?.level === "strong" && populatedCount === 4) {
+    positives.push("The OCR looked clean and all key fields are filled in.");
+  }
+
+  let level = "warning";
+  if (populatedCount === 4 && warnings.length === 0) {
+    level = "strong";
+  } else if (populatedCount >= 3 && warnings.length <= 2) {
+    level = "caution";
+  }
+
+  if (!fields.amount || !fields.date) {
+    level = "warning";
+  }
+
+  if (level === "strong") {
+    return {
+      level,
+      badge: "High extraction confidence",
+      reason:
+        "All core fields are present and the OCR source looked healthy enough to support the draft.",
+      summary: "The draft looks complete. You should still compare it with the receipt, but this is a good save candidate.",
+      positives,
+      warnings,
+    };
+  }
+
+  if (level === "caution") {
+    return {
+      level,
+      badge: "Review before save",
+      reason:
+        "Most fields are present, but one or two values still need a deliberate human review.",
+      summary: "The draft is mostly there, but at least one field needs a deliberate human check before saving.",
+      positives,
+      warnings,
+    };
+  }
+
+  return {
+    level,
+    badge: "Low extraction confidence",
+    reason:
+      "Important fields are still weak, missing, or backed by noisy OCR, so the draft should not be trusted without edits.",
+    summary: "Important fields are still weak or missing. Fix the draft before you save this expense.",
+    positives,
+    warnings,
+  };
+}
+
+function SignalIcon({ level }) {
+  if (level === "strong") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 16 16"
+      >
+        <path
+          d="M3.5 8.5 6.5 11l6-6.5"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      </svg>
+    );
+  }
+
+  if (level === "caution") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 16 16"
+      >
+        <path
+          d="M8 2.5 14 13H2L8 2.5Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M8 6v3.25"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.6"
+        />
+        <circle cx="8" cy="11.5" fill="currentColor" r=".8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 16 16"
+    >
+      <circle cx="8" cy="8" r="5.75" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 4.75v3.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+      />
+      <circle cx="8" cy="11.25" fill="currentColor" r=".8" />
+    </svg>
+  );
+}
+
+function AssessmentPanel({ assessment, eyebrow }) {
+  if (!assessment) {
+    return null;
+  }
+
+  const theme = SIGNAL_THEMES[assessment.level];
+
+  return (
+    <div className={`mt-6 rounded-[1.5rem] border px-5 py-4 ${theme.container}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${theme.eyebrow}`}>
+            {eyebrow}
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${theme.icon}`}
+            >
+              <SignalIcon level={assessment.level} />
+            </span>
+            <p className="text-base font-semibold">{assessment.badge}</p>
+          </div>
+        </div>
+
+        <span
+          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${theme.badge}`}
+          title={assessment.reason}
+        >
+          <SignalIcon level={assessment.level} />
+          {theme.label}
+        </span>
+      </div>
+
+      <p className="mt-3 text-sm leading-7">{assessment.summary}</p>
+      <p className="mt-3 text-sm leading-6 opacity-80">
+        <span className="font-semibold">Why this signal:</span>{" "}
+        {assessment.reason}
+      </p>
+
+      {assessment.positives.length > 0 ? (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
+            Looks good
+          </p>
+          <ul className="mt-2 space-y-2">
+            {assessment.positives.map((item) => (
+              <li className="flex items-start gap-3 text-sm leading-6" key={item}>
+                <span className={`mt-2 h-2 w-2 rounded-full ${theme.accent}`} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {assessment.warnings.length > 0 ? (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
+            Watch out
+          </p>
+          <ul className="mt-2 space-y-2">
+            {assessment.warnings.map((item) => (
+              <li className="flex items-start gap-3 text-sm leading-6" key={item}>
+                <span className="mt-2 h-2 w-2 rounded-full bg-current opacity-70" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 async function svgToPngFile(svgText, fileName) {
@@ -542,6 +877,13 @@ export default function UploadForm({ apiBaseUrl }) {
 
   const hasExtractedFields = Object.values(extractedFields).some(Boolean);
   const reviewHints = buildReviewHints(extractedFields);
+  const ocrAssessment = buildOcrAssessment(ocrText);
+  const extractionAssessment = buildExtractionAssessment(
+    extractedFields,
+    ocrAssessment
+  );
+  const shouldWarnBeforeSave =
+    extractionAssessment?.level === "warning" && !savedExpense;
   const canSaveExpense =
     Boolean(uploadedFile?.id) &&
     hasExtractedFields &&
@@ -745,6 +1087,11 @@ export default function UploadForm({ apiBaseUrl }) {
           </div>
         ) : null}
 
+        <AssessmentPanel
+          assessment={ocrAssessment}
+          eyebrow="OCR confidence"
+        />
+
         {ocrText ? (
           <div className="mt-6 rounded-2xl border border-amber-900/10 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-950">
             OCR output can be noisy, especially on screenshots, skewed photos,
@@ -804,6 +1151,11 @@ export default function UploadForm({ apiBaseUrl }) {
             {saveErrorMessage}
           </div>
         ) : null}
+
+        <AssessmentPanel
+          assessment={extractionAssessment}
+          eyebrow="Extraction confidence"
+        />
 
         {(hasExtractedFields || isExtractingFields) ? (
           <div className="mt-6 rounded-[1.5rem] border border-amber-900/10 bg-amber-50/80 px-5 py-4">
@@ -902,9 +1254,19 @@ export default function UploadForm({ apiBaseUrl }) {
         ) : null}
 
         <div className="mt-6 flex flex-col gap-4 border-t border-stone-900/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-xl text-sm leading-7 text-stone-600">
-            Save the reviewed fields as a permanent expense record in SQLite.
-          </p>
+          <div className="max-w-xl space-y-3">
+            <p className="text-sm leading-7 text-stone-600">
+              Save the reviewed fields as a permanent expense record in SQLite.
+            </p>
+
+            {shouldWarnBeforeSave ? (
+              <div className="rounded-2xl border border-amber-900/10 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                We recommend one more review before saving. The extraction still
+                looks weak, so check the vendor, amount, and date against the
+                receipt first.
+              </div>
+            ) : null}
+          </div>
 
           <button
             className="inline-flex min-h-12 items-center justify-center rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
