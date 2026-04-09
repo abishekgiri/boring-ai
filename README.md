@@ -11,6 +11,20 @@ save, search, edit, and export.
 Upload -> OCR -> Extract -> Review -> Save -> Browse -> Export
 ```
 
+## Product demo
+
+![boring-ai demo](./docs/boring-ai-demo.gif)
+
+The walkthrough above uses the bundled East Repair receipt and shows the full
+first-run path:
+
+1. Load the demo receipt
+2. Store it locally
+3. Run OCR
+4. Extract editable fields
+5. Save the expense
+6. Open the workspace
+
 ## What it does
 
 - Upload receipts as images or PDFs
