@@ -75,17 +75,20 @@ CATEGORY_KEYWORDS = {
         "burger",
     ),
     "travel": (
-        "hotel",
         "flight",
         "airline",
-        "airbnb",
         "booking",
         "trip",
+        "ticket",
+        "boarding",
     ),
     "software": (
         "software",
         "subscription",
         "saas",
+        "cloud",
+        "hosting",
+        "compute",
         "adobe",
         "figma",
         "notion",
@@ -139,6 +142,9 @@ CATEGORY_KEYWORDS = {
         "inn",
         "suite",
         "hostel",
+        "airbnb",
+        "resort",
+        "stay",
     ),
     "utilities": (
         "utility",
@@ -148,6 +154,79 @@ CATEGORY_KEYWORDS = {
         "phone",
         "wireless",
         "electricity",
+    ),
+}
+
+CATEGORY_VENDOR_HINTS = {
+    "meals": (
+        "starbucks",
+        "dunkin",
+        "mcdonald",
+        "chipotle",
+        "subway",
+        "panera",
+        "sweetgreen",
+    ),
+    "travel": (
+        "delta",
+        "united",
+        "southwest",
+        "american airlines",
+        "jetblue",
+        "expedia",
+        "booking.com",
+    ),
+    "software": (
+        "amazon web services",
+        "aws",
+        "openai",
+        "github",
+        "vercel",
+        "render",
+        "figma",
+        "notion",
+        "slack",
+        "linear",
+        "adobe",
+    ),
+    "office": (
+        "staples",
+        "office depot",
+        "fedex office",
+    ),
+    "shopping": (
+        "walmart",
+        "target",
+        "costco",
+        "best buy",
+        "amazon",
+    ),
+    "transport": (
+        "uber",
+        "lyft",
+        "shell",
+        "chevron",
+        "exxon",
+        "bp",
+        "jiffy lube",
+        "autozone",
+    ),
+    "lodging": (
+        "hilton",
+        "marriott",
+        "hyatt",
+        "holiday inn",
+        "airbnb",
+        "motel 6",
+    ),
+    "utilities": (
+        "xfinity",
+        "comcast",
+        "verizon",
+        "at&t",
+        "att",
+        "t-mobile",
+        "tmobile",
     ),
 }
 
@@ -1067,6 +1146,20 @@ def _extract_payment_method_candidate(ocr_text: str) -> tuple[str | None, str | 
     return None, None
 
 
+def _score_category(
+    scores: dict[str, int],
+    reasons: dict[str, list[str]],
+    category: str,
+    points: int,
+    reason: str,
+) -> None:
+    if points <= 0:
+        return
+
+    scores[category] = scores.get(category, 0) + points
+    reasons.setdefault(category, []).append(reason)
+
+
 def _infer_category_from_ocr(
     ocr_text: str,
     *,
@@ -1077,24 +1170,77 @@ def _infer_category_from_ocr(
     normalized_vendor = (vendor or "").lower()
     line_item_text = " ".join(item.description.lower() for item in line_items or [])
     scores: dict[str, int] = {}
+    reasons: dict[str, list[str]] = {}
+
+    learning_hint = get_vendor_learning_hint(vendor) if vendor else None
+    learned_category = learning_hint.get("preferred_category") if learning_hint else None
+    if isinstance(learned_category, str) and learned_category in EXPENSE_CATEGORIES:
+        _score_category(
+            scores,
+            reasons,
+            learned_category,
+            7,
+            "learned from prior user corrections for this vendor",
+        )
+
+    for category, vendor_hints in CATEGORY_VENDOR_HINTS.items():
+        for hint in vendor_hints:
+            if normalized_vendor and hint in normalized_vendor:
+                if " " in hint:
+                    points = 10
+                elif len(hint) >= 6:
+                    points = 6
+                else:
+                    points = 5
+                _score_category(
+                    scores,
+                    reasons,
+                    category,
+                    points,
+                    f"vendor matched '{hint}'",
+                )
 
     for category, keywords in CATEGORY_KEYWORDS.items():
-        category_score = sum(
-            1 for keyword in keywords if keyword in normalized_text
-        )
-        category_score += sum(
-            2 for keyword in keywords if normalized_vendor and keyword in normalized_vendor
-        )
-        category_score += sum(
-            2 for keyword in keywords if line_item_text and keyword in line_item_text
-        )
-        if category_score:
-            scores[category] = category_score
+        for keyword in keywords:
+            if normalized_vendor and keyword in normalized_vendor:
+                _score_category(
+                    scores,
+                    reasons,
+                    category,
+                    4,
+                    f"vendor includes '{keyword}'",
+                )
+            if line_item_text and keyword in line_item_text:
+                _score_category(
+                    scores,
+                    reasons,
+                    category,
+                    3,
+                    f"line items include '{keyword}'",
+                )
+            if keyword in normalized_text:
+                _score_category(
+                    scores,
+                    reasons,
+                    category,
+                    1,
+                    f"OCR text includes '{keyword}'",
+                )
 
     if not scores:
         return None
 
-    return max(scores.items(), key=lambda item: item[1])[0]
+    ranked_categories = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    best_category, best_score = ranked_categories[0]
+    second_score = ranked_categories[1][1] if len(ranked_categories) > 1 else 0
+
+    if best_score < 2:
+        return None
+
+    if best_score - second_score < 2 and best_score < 7:
+        return None
+
+    return best_category
 
 
 def _extract_category_candidate(

@@ -10,5 +10,23 @@
     "input_path": "examples/east-repair-messy-ocr.txt",
     "expected_path": "examples/east-repair-messy-expected.json",
     "description": "Messy OCR should still recover a safe draft without inventing an unreliable date."
+  },
+  {
+    "name": "starbucks-lunch-ocr",
+    "input_path": "examples/starbucks-lunch-ocr.txt",
+    "expected_path": "examples/starbucks-lunch-expected.json",
+    "description": "Merchant and menu cues should classify a coffee shop receipt as meals."
+  },
+  {
+    "name": "aws-hosting-ocr",
+    "input_path": "examples/aws-hosting-ocr.txt",
+    "expected_path": "examples/aws-hosting-expected.json",
+    "description": "Vendor-specific software signals should classify a cloud invoice as software."
+  },
+  {
+    "name": "uber-trip-ocr",
+    "input_path": "examples/uber-trip-ocr.txt",
+    "expected_path": "examples/uber-trip-expected.json",
+    "description": "Transport vendors and ride language should classify a trip receipt as transport."
   }
 ]

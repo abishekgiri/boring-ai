@@ -1,0 +1,11 @@
+{
+  "vendor": "Amazon Web Services",
+  "amount": 89.99,
+  "date": "2026-04-01",
+  "category": "software",
+  "subtotal": null,
+  "tax_amount": null,
+  "receipt_number": "AWS-1001",
+  "due_date": null,
+  "line_items": []
+}

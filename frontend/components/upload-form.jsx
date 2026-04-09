@@ -58,13 +58,23 @@ const SIGNAL_THEMES = {
 };
 const CATEGORY_KEYWORDS = {
   meals: ["restaurant", "cafe", "coffee", "meal", "food", "lunch", "dinner"],
-  travel: ["hotel", "flight", "airline", "trip", "airbnb"],
+  travel: ["flight", "airline", "trip", "ticket", "boarding"],
   software: ["software", "subscription", "saas", "github", "vercel", "render", "openai", "aws"],
   office: ["office", "supplies", "printer", "paper", "staples"],
   shopping: ["walmart", "target", "amazon", "market", "store", "retail"],
   transport: ["uber", "lyft", "taxi", "parking", "toll", "fuel", "repair", "brake", "pedal", "auto", "vehicle"],
-  lodging: ["hotel", "motel", "inn", "suite", "hostel"],
+  lodging: ["hotel", "motel", "inn", "suite", "hostel", "airbnb", "resort", "stay"],
   utilities: ["internet", "phone", "wireless", "electric", "water", "utility"],
+};
+const CATEGORY_VENDOR_HINTS = {
+  meals: ["starbucks", "dunkin", "mcdonald", "chipotle", "subway", "panera", "sweetgreen"],
+  travel: ["delta", "united", "southwest", "american airlines", "jetblue", "expedia", "booking.com"],
+  software: ["amazon web services", "aws", "openai", "github", "vercel", "render", "figma", "notion", "slack", "linear", "adobe"],
+  office: ["staples", "office depot", "fedex office"],
+  shopping: ["walmart", "target", "costco", "best buy", "amazon"],
+  transport: ["uber", "lyft", "shell", "chevron", "exxon", "bp", "jiffy lube", "autozone"],
+  lodging: ["hilton", "marriott", "hyatt", "holiday inn", "airbnb", "motel 6"],
+  utilities: ["xfinity", "comcast", "verizon", "at&t", "att", "t-mobile", "tmobile"],
 };
 const GENERIC_VENDOR_HINTS = [
   "receipt",
@@ -694,23 +704,38 @@ function buildFieldConfidence(ocrText, fields, ocrAssessment, snapshot) {
     }
 
     const keywords = CATEGORY_KEYWORDS[fields.category] ?? [];
-    const matches = keywords.filter((keyword) =>
-      normalizedOcr.includes(keyword)
+    const vendorHints = CATEGORY_VENDOR_HINTS[fields.category] ?? [];
+    const lineItemText = Array.isArray(fields.line_items)
+      ? fields.line_items
+          .map((item) => String(item?.description ?? "").toLowerCase())
+          .join(" ")
+      : "";
+    const ocrMatches = keywords.filter((keyword) => normalizedOcr.includes(keyword));
+    const vendorMatches = vendorHints.filter(
+      (hint) => fields.vendor && normalizeComparableText(fields.vendor).includes(hint)
     );
+    const lineItemMatches = keywords.filter((keyword) => lineItemText.includes(keyword));
 
-    if (matches.length >= 2) {
+    if (vendorMatches.length > 0 || lineItemMatches.length >= 2 || ocrMatches.length >= 2) {
+      const evidence = [
+        ...vendorMatches.slice(0, 1),
+        ...lineItemMatches.slice(0, 2),
+        ...ocrMatches.slice(0, 2),
+      ];
       return {
         level: "strong",
         badge: "High confidence",
-        reason: `Category is supported by multiple OCR keywords (${matches.slice(0, 2).join(", ")}).`,
+        reason: `Category is strongly supported by merchant or receipt evidence (${Array.from(new Set(evidence)).slice(0, 3).join(", ")}).`,
       };
     }
 
-    if (matches.length === 1) {
+    if (vendorMatches.length === 1 || lineItemMatches.length === 1 || ocrMatches.length === 1) {
+      const evidence =
+        vendorMatches[0] ?? lineItemMatches[0] ?? ocrMatches[0];
       return {
         level: "caution",
         badge: "Medium confidence",
-        reason: `Category is supported by one OCR keyword (${matches[0]}), but still deserves a quick review.`,
+        reason: `Category is supported by one clear clue (${evidence}), but still deserves a quick review.`,
       };
     }
 
