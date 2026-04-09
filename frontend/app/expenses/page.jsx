@@ -333,6 +333,13 @@ export default function ExpensesPage() {
       setReviewStatus("");
       setDuplicatesOnly(true);
       setSortOption("date-desc");
+      return;
+    }
+
+    if (preset === "all") {
+      setReviewStatus("");
+      setDuplicatesOnly(false);
+      setSortOption("date-desc");
     }
   }
 
@@ -391,7 +398,7 @@ export default function ExpensesPage() {
             </p>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 reviewStatus === "warning"
@@ -469,6 +476,26 @@ export default function ExpensesPage() {
               </p>
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Compare matching records before export or deletion.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                !reviewStatus && !duplicatesOnly && sortOption === "date-desc"
+                  ? "border-stone-900/15 bg-stone-100"
+                  : "border-stone-900/10 bg-white hover:bg-stone-100"
+              }`}
+              onClick={() => applyWorkspacePreset("all")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-600">
+                Reset view
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : total}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Return to all visible records with the default newest-first workspace view.
               </p>
             </button>
           </div>
