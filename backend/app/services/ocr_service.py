@@ -9,7 +9,13 @@ from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError
 from PIL import Image, UnidentifiedImageError
 from pytesseract import TesseractNotFoundError
 
-from app.services.file_storage import get_upload_file_path, update_upload_ocr_text
+from app.schemas.uploads import DocumentClassification
+from app.services.document_classification import classify_document
+from app.services.file_storage import (
+    get_upload_file_path,
+    get_upload_metadata,
+    update_upload_ocr_text,
+)
 
 
 def _ocr_image_file(file_path: Path) -> str:
@@ -45,7 +51,8 @@ def _ocr_pdf_file(file_path: Path) -> str:
     return "\n\n".join(text.strip() for text in extracted_pages if text.strip())
 
 
-def run_ocr(upload_id: str) -> str:
+def run_ocr(upload_id: str) -> tuple[str, DocumentClassification]:
+    upload_record = get_upload_metadata(upload_id)
     file_path = get_upload_file_path(upload_id)
 
     try:
@@ -66,5 +73,10 @@ def run_ocr(upload_id: str) -> str:
             detail="OCR completed but no readable text was found in the file.",
         )
 
-    update_upload_ocr_text(upload_id, normalized_text)
-    return normalized_text
+    document_classification = classify_document(
+        ocr_text=normalized_text,
+        filename=upload_record.filename,
+        content_type=upload_record.content_type,
+    )
+    update_upload_ocr_text(upload_id, normalized_text, document_classification)
+    return normalized_text, document_classification

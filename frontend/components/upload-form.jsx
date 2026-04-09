@@ -1534,6 +1534,7 @@ export default function UploadForm({ apiBaseUrl }) {
       }
 
       setOcrText(payload?.text ?? "");
+      const nextClassification = payload?.document_classification ?? null;
       setUploadedFile((current) =>
         current
           ? {
@@ -1541,10 +1542,22 @@ export default function UploadForm({ apiBaseUrl }) {
               ocr_text: payload?.text ?? "",
               extracted_fields: null,
               extraction_provenance: null,
+              document_classification: nextClassification,
             }
           : current
       );
-      setStatusMessage("OCR complete. Review the raw text, then extract fields.");
+
+      if (nextClassification?.document_type === "unknown") {
+        setStatusMessage(
+          "OCR complete. This file does not clearly look like a receipt or invoice, so review it manually before extracting fields."
+        );
+      } else if (nextClassification?.document_type === "invoice") {
+        setStatusMessage(
+          "OCR complete. This looks like an invoice, so review totals, dates, and payment terms carefully before extracting fields."
+        );
+      } else {
+        setStatusMessage("OCR complete. Review the raw text, then extract fields.");
+      }
     } catch (error) {
       setOcrText("");
       setOcrErrorMessage(
@@ -1596,6 +1609,10 @@ export default function UploadForm({ apiBaseUrl }) {
               ocr_text: payload?.ocr_text ?? current.ocr_text,
               extracted_fields: payload?.extracted_fields ?? null,
               extraction_provenance: payload?.extraction_provenance ?? null,
+              document_classification:
+                payload?.document_classification ??
+                current.document_classification ??
+                null,
             }
           : current
       );
@@ -1774,6 +1791,7 @@ export default function UploadForm({ apiBaseUrl }) {
   const hasExtractedFields = hasAnyExtractedField(extractedFields);
   const reviewHints = buildReviewHints(extractedFields);
   const ocrAssessment = buildOcrAssessment(ocrText);
+  const documentAssessment = uploadedFile?.document_classification ?? null;
   const extractionAssessment = buildExtractionAssessment(
     extractedFields,
     ocrAssessment
@@ -2014,6 +2032,19 @@ export default function UploadForm({ apiBaseUrl }) {
         {ocrErrorMessage ? (
           <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
             {ocrErrorMessage}
+          </div>
+        ) : null}
+
+        <AssessmentPanel
+          assessment={documentAssessment}
+          eyebrow="Document check"
+        />
+
+        {documentAssessment?.document_type === "unknown" ? (
+          <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-7 text-rose-950">
+            This upload does not clearly look like a receipt or invoice. You can
+            still continue, but treat extraction as a draft and verify every field
+            before saving.
           </div>
         ) : null}
 

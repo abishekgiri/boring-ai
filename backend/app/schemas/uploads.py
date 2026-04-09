@@ -29,6 +29,9 @@ PaymentMethod = Literal[
     "other",
 ]
 
+ClassificationLevel = Literal["strong", "caution", "warning"]
+DocumentType = Literal["receipt", "invoice", "unknown"]
+
 
 class ExtractedLineItem(BaseModel):
     description: str
@@ -168,6 +171,16 @@ class ExtractedExpenseFields(BaseModel):
             raise ValueError("LLM output did not match the expected extraction schema.") from exc
 
 
+class DocumentClassification(BaseModel):
+    document_type: DocumentType
+    level: ClassificationLevel
+    badge: str
+    summary: str
+    reason: str
+    positives: list[str] = []
+    warnings: list[str] = []
+
+
 class UploadRecord(BaseModel):
     id: str
     filename: str
@@ -178,15 +191,18 @@ class UploadRecord(BaseModel):
     created_at: datetime
     ocr_text: Optional[str] = None
     extracted_fields: Optional[ExtractedExpenseFields] = None
+    document_classification: Optional[DocumentClassification] = None
     extraction_provenance: Optional[ExtractionProvenance] = None
 
 
 class OcrResult(BaseModel):
     text: str
+    document_classification: Optional[DocumentClassification] = None
 
 
 class ExtractionResult(BaseModel):
     upload_id: str
     ocr_text: str
     extracted_fields: ExtractedExpenseFields
+    document_classification: Optional[DocumentClassification] = None
     extraction_provenance: Optional[ExtractionProvenance] = None
