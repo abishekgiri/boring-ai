@@ -65,7 +65,7 @@ def classify_document(
     receipt_score, receipt_signals = _collect_matches(normalized_text, RECEIPT_PATTERNS)
     invoice_score, invoice_signals = _collect_matches(normalized_text, INVOICE_PATTERNS)
     ui_noise_score = sum(
-        1 for pattern in UI_NOISE_PATTERNS if re.search(pattern, normalized_text, flags=re.IGNORECASE)
+        1 for pattern in UI_NOISE_PATTERNS if re.search(pattern, normalized_text)
     )
 
     amount_matches = AMOUNT_PATTERN.findall(normalized_text)
