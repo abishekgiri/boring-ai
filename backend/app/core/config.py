@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 DEFAULT_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
@@ -27,6 +27,10 @@ class Settings:
     uploads_metadata_dir: Path
     uploads_public_path: str
     max_upload_size_bytes: int
+    openai_api_key: Optional[str]
+    openai_model: str
+    openai_api_base_url: str
+    openai_timeout_seconds: float
 
 
 def _parse_cors_origins() -> Tuple[str, ...]:
@@ -43,6 +47,14 @@ def _parse_max_upload_size() -> int:
         return int(raw_value)
     except ValueError:
         return DEFAULT_MAX_UPLOAD_SIZE_BYTES
+
+
+def _parse_timeout_seconds() -> float:
+    raw_value = os.getenv("OPENAI_TIMEOUT_SECONDS", "30")
+    try:
+        return float(raw_value)
+    except ValueError:
+        return 30.0
 
 
 @lru_cache(maxsize=1)
@@ -64,4 +76,11 @@ def get_settings() -> Settings:
         uploads_metadata_dir=uploads_metadata_dir,
         uploads_public_path="/uploads",
         max_upload_size_bytes=_parse_max_upload_size(),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        openai_api_base_url=os.getenv(
+            "OPENAI_API_BASE_URL",
+            "https://api.openai.com/v1",
+        ).rstrip("/"),
+        openai_timeout_seconds=_parse_timeout_seconds(),
     )

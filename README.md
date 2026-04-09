@@ -31,6 +31,15 @@ Phase 3 adds the first OCR pass:
 - PDF uploads are converted to images and OCR'd page by page
 - raw OCR text is returned to the frontend and stored in upload metadata
 
+## Phase 4 status
+
+Phase 4 adds AI field extraction:
+
+- `POST /api/uploads/{id}/extract` sends stored OCR text to OpenAI
+- extraction returns `vendor`, `amount`, `date`, and `category`
+- extracted fields are stored back in upload metadata
+- the frontend shows an editable review form before save
+
 ## V1 scope
 
 The first version stays intentionally small:
@@ -72,6 +81,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export OPENAI_API_KEY=your_key_here
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -94,6 +104,10 @@ Use `.env.example` as the starting point.
 
 - `APP_ENV`
 - `BACKEND_CORS_ORIGINS`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_API_BASE_URL`
+- `OPENAI_TIMEOUT_SECONDS`
 
 ### Frontend
 
