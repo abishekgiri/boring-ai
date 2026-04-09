@@ -84,7 +84,8 @@ def _get_filtered_expenses(
         try:
             upload_record = get_upload_metadata(item.upload_id)
         except HTTPException:
-            enriched_items.append(item)
+            if not (document_type or review_only):
+                enriched_items.append(item)
             continue
 
         classification = upload_record.document_classification
