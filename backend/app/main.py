@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
+from app.db.database import initialize_database
+from app.routes.expenses import router as expenses_router
 from app.routes.uploads import router as uploads_router
 
 
@@ -15,8 +17,8 @@ settings = get_settings()
 
 app = FastAPI(
     title="boring-ai backend",
-    version="0.2.0",
-    description="Upload and preview foundation for the boring-ai freelancer back office.",
+    version="0.3.0",
+    description="Receipt upload, extraction, and expense persistence backend for boring-ai.",
 )
 
 app.add_middleware(
@@ -32,7 +34,13 @@ app.mount(
     StaticFiles(directory=settings.uploads_files_dir),
     name="uploads",
 )
+app.include_router(expenses_router)
 app.include_router(uploads_router)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    initialize_database()
 
 
 @app.get("/health", tags=["system"])

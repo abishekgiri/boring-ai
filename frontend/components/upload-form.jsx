@@ -84,6 +84,30 @@ function validateFile(file) {
   return null;
 }
 
+function validateExpenseFields(uploadedFile, fields) {
+  if (!uploadedFile?.id) {
+    return "Upload a receipt before saving an expense.";
+  }
+
+  if (!fields.vendor.trim()) {
+    return "Vendor is required before saving.";
+  }
+
+  if (!fields.amount || Number.isNaN(Number(fields.amount)) || Number(fields.amount) <= 0) {
+    return "Amount must be greater than 0 before saving.";
+  }
+
+  if (!fields.date) {
+    return "Date is required before saving.";
+  }
+
+  if (!fields.category) {
+    return "Category is required before saving.";
+  }
+
+  return null;
+}
+
 export default function UploadForm({ apiBaseUrl }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
@@ -95,12 +119,15 @@ export default function UploadForm({ apiBaseUrl }) {
   const [uploadErrorMessage, setUploadErrorMessage] = useState("");
   const [ocrErrorMessage, setOcrErrorMessage] = useState("");
   const [extractionErrorMessage, setExtractionErrorMessage] = useState("");
+  const [saveErrorMessage, setSaveErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState(
     "Upload a receipt image or PDF to store it locally."
   );
+  const [savedExpense, setSavedExpense] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunningOcr, setIsRunningOcr] = useState(false);
   const [isExtractingFields, setIsExtractingFields] = useState(false);
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -121,6 +148,8 @@ export default function UploadForm({ apiBaseUrl }) {
     setExtractedFields(createEmptyExtractedFields());
     setOcrErrorMessage("");
     setExtractionErrorMessage("");
+    setSaveErrorMessage("");
+    setSavedExpense(null);
   }
 
   function handleFileChange(event) {
@@ -209,6 +238,8 @@ export default function UploadForm({ apiBaseUrl }) {
     setIsRunningOcr(true);
     setOcrErrorMessage("");
     setExtractionErrorMessage("");
+    setSaveErrorMessage("");
+    setSavedExpense(null);
     setExtractedFields(createEmptyExtractedFields());
     setStatusMessage("Extracting raw text from the stored receipt...");
 
@@ -258,6 +289,8 @@ export default function UploadForm({ apiBaseUrl }) {
 
     setIsExtractingFields(true);
     setExtractionErrorMessage("");
+    setSaveErrorMessage("");
+    setSavedExpense(null);
     setStatusMessage("Sending OCR text to the AI extraction service...");
 
     try {
@@ -303,27 +336,85 @@ export default function UploadForm({ apiBaseUrl }) {
   }
 
   function handleExtractedFieldChange(field, value) {
+    setSaveErrorMessage("");
+    setSavedExpense(null);
     setExtractedFields((current) => ({
       ...current,
       [field]: value,
     }));
   }
 
+  async function handleSaveExpense() {
+    const validationError = validateExpenseFields(uploadedFile, extractedFields);
+    if (validationError) {
+      setSaveErrorMessage(validationError);
+      setStatusMessage("Fix the reviewed fields before saving.");
+      return;
+    }
+
+    setIsSavingExpense(true);
+    setSaveErrorMessage("");
+    setStatusMessage("Saving reviewed expense into SQLite...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/expenses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          upload_id: uploadedFile.id,
+          vendor: extractedFields.vendor.trim(),
+          amount: Number(extractedFields.amount),
+          date: extractedFields.date,
+          category: extractedFields.category,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.detail ?? "Expense save failed. Please try again.");
+      }
+
+      setSavedExpense(payload);
+      setStatusMessage("Expense saved successfully.");
+    } catch (error) {
+      setSavedExpense(null);
+      setSaveErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Expense save failed. Please try again."
+      );
+      setStatusMessage("Expense save did not complete.");
+    } finally {
+      setIsSavingExpense(false);
+    }
+  }
+
   const hasExtractedFields = Object.values(extractedFields).some(Boolean);
+  const canSaveExpense =
+    Boolean(uploadedFile?.id) &&
+    hasExtractedFields &&
+    !isUploading &&
+    !isRunningOcr &&
+    !isExtractingFields &&
+    !isSavingExpense &&
+    !savedExpense;
 
   return (
     <section className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-            Phase 4
+            Phase 5
           </p>
           <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-            Receipt upload + OCR + AI extraction
+            Receipt upload + extraction + save
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
             Upload a receipt, extract the raw OCR text, then turn that messy
-            text into editable expense fields the user can review before save.
+            text into editable expense fields the user can review and save.
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
@@ -480,12 +571,18 @@ export default function UploadForm({ apiBaseUrl }) {
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
           The AI suggestion should always stay editable. This is the review step
-          we will hand off to SQLite persistence in Phase 5.
+          that now saves directly into SQLite as a real expense record.
         </p>
 
         {extractionErrorMessage ? (
           <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
             {extractionErrorMessage}
+          </div>
+        ) : null}
+
+        {saveErrorMessage ? (
+          <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
+            {saveErrorMessage}
           </div>
         ) : null}
 
@@ -566,6 +663,63 @@ export default function UploadForm({ apiBaseUrl }) {
                 ))}
               </select>
             </label>
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-4 border-t border-stone-900/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-sm leading-7 text-stone-600">
+            Save the reviewed fields as a permanent expense record in SQLite.
+          </p>
+
+          <button
+            className="inline-flex min-h-12 items-center justify-center rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-300"
+            disabled={!canSaveExpense}
+            onClick={handleSaveExpense}
+            type="button"
+          >
+            {isSavingExpense ? "Saving..." : savedExpense ? "Saved" : "Save expense"}
+          </button>
+        </div>
+
+        {savedExpense ? (
+          <div className="mt-6 rounded-[1.5rem] border border-emerald-900/10 bg-emerald-50/80 p-5 text-emerald-950">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em]">
+              Expense saved
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl bg-white/80 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Expense ID
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {savedExpense.id}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Vendor
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {savedExpense.vendor}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Amount
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {savedExpense.amount}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Category
+                </p>
+                <p className="mt-2 text-sm font-medium capitalize text-stone-900">
+                  {savedExpense.category}
+                </p>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
