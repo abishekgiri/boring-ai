@@ -610,7 +610,7 @@ def _build_field_confidence(
                 ocr_level,
             )
 
-        if any(candidate.lower() in normalized_ocr for candidate in date_candidates):
+        if any(_normalize_comparable_text(candidate) in normalized_ocr for candidate in date_candidates):
             return _build_confidence(
                 "caution",
                 "Date appears in the OCR text, but not on a clearly labeled date line.",
