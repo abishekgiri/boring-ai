@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from urllib import error, request
 
@@ -165,6 +166,32 @@ DATE_FORMATS = (
     "%d%m%y",
 )
 
+GENERIC_VENDOR_HINTS = (
+    "receipt",
+    "invoice",
+    "bill to",
+    "ship to",
+    "customer",
+    "payment",
+    "terms",
+    "subtotal",
+    "amount due",
+)
+
+
+@dataclass(frozen=True)
+class HeuristicFieldCandidate:
+    value: str | float | None
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class HeuristicExtractionCandidates:
+    vendor: HeuristicFieldCandidate
+    amount: HeuristicFieldCandidate
+    date: HeuristicFieldCandidate
+    category: HeuristicFieldCandidate
+
 
 def _extraction_schema() -> dict:
     return {
@@ -201,7 +228,29 @@ def _extraction_schema() -> dict:
     }
 
 
-def _response_payload(ocr_text: str) -> dict:
+def _response_payload(
+    ocr_text: str, heuristic_candidates: HeuristicExtractionCandidates
+) -> dict:
+    heuristic_lines: list[str] = []
+    if heuristic_candidates.vendor.value:
+        heuristic_lines.append(
+            f"- vendor candidate: {heuristic_candidates.vendor.value} ({heuristic_candidates.vendor.source})"
+        )
+    if heuristic_candidates.amount.value is not None:
+        heuristic_lines.append(
+            f"- amount candidate: {heuristic_candidates.amount.value} ({heuristic_candidates.amount.source})"
+        )
+    if heuristic_candidates.date.value:
+        heuristic_lines.append(
+            f"- date candidate: {heuristic_candidates.date.value} ({heuristic_candidates.date.source})"
+        )
+    if heuristic_candidates.category.value:
+        heuristic_lines.append(
+            f"- category candidate: {heuristic_candidates.category.value} ({heuristic_candidates.category.source})"
+        )
+
+    heuristic_section = "\n".join(heuristic_lines) or "- no strong heuristic candidates were found"
+
     return {
         "model": get_settings().openai_model,
         "input": [
@@ -210,6 +259,9 @@ def _response_payload(ocr_text: str) -> dict:
                 "content": (
                     "You extract structured expense data from OCR receipt text. "
                     "Return only JSON that matches the provided schema. "
+                    "You are part of a hybrid extraction pipeline. Deterministic receipt parsing has already proposed "
+                    "grounded candidates for some fields. Use those candidates when they match the OCR evidence, and "
+                    "only override them when the OCR clearly supports a better answer. "
                     "Prefer the merchant or business header as vendor, not bill-to, ship-to, "
                     "customer names, payer names, or signatures. "
                     "Use the final paid total, such as receipt total, amount due, total due, "
@@ -229,6 +281,8 @@ def _response_payload(ocr_text: str) -> dict:
                     "- amount should be the final total actually charged\n"
                     "- date should be the receipt or invoice date\n"
                     "- category should use the provided enum only\n\n"
+                    "Heuristic candidates from deterministic parsing:\n"
+                    f"{heuristic_section}\n\n"
                     f"OCR text:\n{ocr_text}"
                 ),
             },
@@ -300,6 +354,26 @@ def _looks_like_person_name(value: str) -> bool:
     return all(part.replace(".", "").isalpha() for part in parts)
 
 
+def _normalize_match_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _text_contains_candidate(haystack: str, needle: str) -> bool:
+    normalized_needle = _normalize_match_text(needle)
+    if not normalized_needle:
+        return False
+
+    return normalized_needle in _normalize_match_text(haystack)
+
+
+def _looks_like_generic_vendor(value: str) -> bool:
+    normalized_value = value.strip().lower()
+    if not normalized_value:
+        return True
+
+    return any(hint in normalized_value for hint in GENERIC_VENDOR_HINTS)
+
+
 def _extract_vendor_from_ocr(ocr_text: str) -> str | None:
     candidates: list[tuple[int, str]] = []
 
@@ -342,6 +416,14 @@ def _extract_vendor_from_ocr(ocr_text: str) -> str | None:
 
     best_score, best_line = max(candidates, key=lambda item: item[0])
     return best_line if best_score > 0 else None
+
+
+def _extract_vendor_candidate(ocr_text: str) -> HeuristicFieldCandidate:
+    vendor = _extract_vendor_from_ocr(ocr_text)
+    if not vendor:
+        return HeuristicFieldCandidate(value=None, source=None)
+
+    return HeuristicFieldCandidate(value=vendor, source="header_vendor")
 
 
 def _extract_money_values(line: str) -> list[float]:
@@ -520,16 +602,21 @@ def _extract_tax_amount(ocr_text: str, subtotal: float | None) -> float | None:
 
 
 def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
-    amount_candidates: list[tuple[int, float]] = []
+    amount, _ = _extract_total_amount_candidate(ocr_text)
+    return amount
+
+
+def _extract_total_amount_candidate(ocr_text: str) -> tuple[float | None, str | None]:
+    amount_candidates: list[tuple[int, float, str]] = []
 
     priority_rules = (
-        ("receipt total", 100),
-        ("grand total", 95),
-        ("amount due", 90),
-        ("total due", 90),
-        ("balance due", 85),
-        ("invoice total", 85),
-        ("total", 70),
+        ("receipt total", 100, "receipt_total"),
+        ("grand total", 95, "grand_total"),
+        ("amount due", 90, "amount_due"),
+        ("total due", 90, "amount_due"),
+        ("balance due", 85, "balance_due"),
+        ("invoice total", 85, "invoice_total"),
+        ("total", 70, "labeled_total"),
     )
 
     ignore_hints = ("subtotal", "tax", "unit price", "routing", "qty", "amount$")
@@ -544,7 +631,7 @@ def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
         if not values:
             continue
 
-        for label, base_score in priority_rules:
+        for label, base_score, source in priority_rules:
             if label not in normalized_line:
                 continue
 
@@ -553,10 +640,11 @@ def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
             ):
                 continue
 
-            amount_candidates.append((base_score, values[-1][1]))
+            amount_candidates.append((base_score, values[-1][1], source))
 
     if amount_candidates:
-        return max(amount_candidates, key=lambda item: (item[0], item[1]))[1]
+        _, amount, source = max(amount_candidates, key=lambda item: (item[0], item[1]))
+        return amount, source
 
     subtotal = _extract_labeled_amount(
         ocr_text,
@@ -570,10 +658,10 @@ def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
 
     tax_amount = _extract_tax_amount(ocr_text, subtotal)
     if subtotal is not None and tax_amount is not None:
-        return round(subtotal + tax_amount, 2)
+        return round(subtotal + tax_amount, 2), "subtotal_plus_tax"
 
     if subtotal is not None:
-        return subtotal
+        return subtotal, "subtotal_only"
 
     fallback_values: list[float] = []
     for line in _iter_non_empty_lines(ocr_text):
@@ -584,7 +672,10 @@ def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
             continue
         fallback_values.extend(_extract_money_values(normalized_line))
 
-    return max(fallback_values) if fallback_values else None
+    if fallback_values:
+        return max(fallback_values), "largest_visible_amount"
+
+    return None, None
 
 
 def _normalize_date_candidates(value: str) -> list[str]:
@@ -635,8 +726,13 @@ def _parse_date_token(value: str) -> str | None:
 
 
 def _extract_date_from_ocr(ocr_text: str) -> str | None:
-    primary_candidates: list[tuple[int, str]] = []
-    secondary_candidates: list[tuple[int, str]] = []
+    parsed_date, _ = _extract_date_candidate(ocr_text)
+    return parsed_date
+
+
+def _extract_date_candidate(ocr_text: str) -> tuple[str | None, str | None]:
+    primary_candidates: list[tuple[int, str, str]] = []
+    secondary_candidates: list[tuple[int, str, str]] = []
     generic_pattern = re.compile(r"\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b")
     labeled_token_pattern = re.compile(r"[A-Za-z0-9/-]{6,16}")
     saw_primary_date_label = False
@@ -650,36 +746,43 @@ def _extract_date_from_ocr(ocr_text: str) -> str | None:
             continue
 
         score = 10
+        source = "unlabeled_date"
         if "receipt date" in normalized_line:
             score = 100
             saw_primary_date_label = True
+            source = "receipt_date"
         elif "invoice date" in normalized_line:
             score = 95
             saw_primary_date_label = True
+            source = "invoice_date"
         elif "date" in normalized_line and "due date" not in normalized_line:
             score = 80
             saw_primary_date_label = True
+            source = "labeled_date"
         elif "due date" in normalized_line:
             score = 20
+            source = "due_date"
 
         for match in matches:
             parsed_date = _parse_date_token(match)
             if parsed_date:
                 if score >= 80:
-                    primary_candidates.append((score, parsed_date))
+                    primary_candidates.append((score, parsed_date, source))
                 else:
-                    secondary_candidates.append((score, parsed_date))
+                    secondary_candidates.append((score, parsed_date, source))
 
     if primary_candidates:
-        return max(primary_candidates, key=lambda item: item[0])[1]
+        _, parsed_date, source = max(primary_candidates, key=lambda item: item[0])
+        return parsed_date, source
 
     if saw_primary_date_label:
-        return None
+        return None, None
 
     if not secondary_candidates:
-        return None
+        return None, None
 
-    return max(secondary_candidates, key=lambda item: item[0])[1]
+    _, parsed_date, source = max(secondary_candidates, key=lambda item: item[0])
+    return parsed_date, source
 
 
 def _infer_category_from_ocr(ocr_text: str) -> str | None:
@@ -699,32 +802,100 @@ def _infer_category_from_ocr(ocr_text: str) -> str | None:
     return max(scores.items(), key=lambda item: item[1])[0]
 
 
-def _apply_fallbacks(
-    extracted_fields: ExtractedExpenseFields,
-    ocr_text: str,
-) -> ExtractedExpenseFields:
-    fallback_vendor = _extract_vendor_from_ocr(ocr_text)
-    fallback_amount = _extract_total_amount_from_ocr(ocr_text)
-    fallback_date = _extract_date_from_ocr(ocr_text)
-    fallback_category = _infer_category_from_ocr(ocr_text)
+def _extract_category_candidate(ocr_text: str) -> HeuristicFieldCandidate:
+    category = _infer_category_from_ocr(ocr_text)
+    if not category:
+        return HeuristicFieldCandidate(value=None, source=None)
 
-    updated_vendor = extracted_fields.vendor
-    if fallback_vendor and (
-        not updated_vendor or _looks_like_person_name(updated_vendor)
-    ):
-        updated_vendor = fallback_vendor
+    return HeuristicFieldCandidate(value=category, source="keyword_inference")
 
-    updated_amount = fallback_amount if fallback_amount is not None else extracted_fields.amount
 
-    updated_date = fallback_date or (
-        extracted_fields.date.isoformat() if extracted_fields.date else None
+def _build_heuristic_candidates(ocr_text: str) -> HeuristicExtractionCandidates:
+    amount, amount_source = _extract_total_amount_candidate(ocr_text)
+    date, date_source = _extract_date_candidate(ocr_text)
+
+    return HeuristicExtractionCandidates(
+        vendor=_extract_vendor_candidate(ocr_text),
+        amount=HeuristicFieldCandidate(value=amount, source=amount_source),
+        date=HeuristicFieldCandidate(value=date, source=date_source),
+        category=_extract_category_candidate(ocr_text),
     )
 
+
+def _amounts_match(first: float | None, second: float | None) -> bool:
+    if first is None or second is None:
+        return False
+
+    return abs(first - second) <= 0.01
+
+
+def _heuristics_to_fields(
+    heuristic_candidates: HeuristicExtractionCandidates,
+) -> ExtractedExpenseFields:
+    return ExtractedExpenseFields.model_validate(
+        {
+            "vendor": heuristic_candidates.vendor.value,
+            "amount": heuristic_candidates.amount.value,
+            "date": heuristic_candidates.date.value,
+            "category": heuristic_candidates.category.value,
+        }
+    )
+
+
+def _has_heuristic_signal(extracted_fields: ExtractedExpenseFields) -> bool:
+    return any(value is not None and value != "" for value in extracted_fields.model_dump().values())
+
+
+def _merge_hybrid_extraction(
+    extracted_fields: ExtractedExpenseFields,
+    heuristic_candidates: HeuristicExtractionCandidates,
+    ocr_text: str,
+) -> ExtractedExpenseFields:
+    updated_vendor = extracted_fields.vendor
+    heuristic_vendor = heuristic_candidates.vendor.value
+    if isinstance(heuristic_vendor, str) and heuristic_vendor:
+        if (
+            not updated_vendor
+            or _looks_like_person_name(updated_vendor)
+            or _looks_like_generic_vendor(updated_vendor)
+            or (
+                not _text_contains_candidate(ocr_text, updated_vendor)
+                and _text_contains_candidate(ocr_text, heuristic_vendor)
+            )
+        ):
+            updated_vendor = heuristic_vendor
+
+    updated_amount = extracted_fields.amount
+    heuristic_amount = heuristic_candidates.amount.value
+    strong_amount_sources = {
+        "receipt_total",
+        "grand_total",
+        "amount_due",
+        "balance_due",
+        "invoice_total",
+        "labeled_total",
+        "subtotal_plus_tax",
+    }
+    if isinstance(heuristic_amount, (int, float)):
+        if updated_amount is None:
+            updated_amount = float(heuristic_amount)
+        elif heuristic_candidates.amount.source in strong_amount_sources and not _amounts_match(
+            float(updated_amount), float(heuristic_amount)
+        ):
+            updated_amount = float(heuristic_amount)
+
+    updated_date = extracted_fields.date.isoformat() if extracted_fields.date else None
+    heuristic_date = heuristic_candidates.date.value
+    strong_date_sources = {"receipt_date", "invoice_date", "labeled_date"}
+    if isinstance(heuristic_date, str) and heuristic_date:
+        if updated_date is None or heuristic_candidates.date.source in strong_date_sources:
+            updated_date = heuristic_date
+
     updated_category = extracted_fields.category
-    if fallback_category and (
-        not updated_category or updated_category == "other"
-    ):
-        updated_category = fallback_category
+    heuristic_category = heuristic_candidates.category.value
+    if isinstance(heuristic_category, str) and heuristic_category:
+        if not updated_category or updated_category == "other":
+            updated_category = heuristic_category
 
     return ExtractedExpenseFields.model_validate(
         {
@@ -738,14 +909,21 @@ def _apply_fallbacks(
 
 def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
     settings = get_settings()
+    heuristic_candidates = _build_heuristic_candidates(ocr_text)
+    heuristic_fields = _heuristics_to_fields(heuristic_candidates)
 
     if not settings.openai_api_key:
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="OpenAI API key is not configured on the backend.",
         )
 
-    payload = json.dumps(_response_payload(ocr_text)).encode("utf-8")
+    payload = json.dumps(_response_payload(ocr_text, heuristic_candidates)).encode(
+        "utf-8"
+    )
     api_request = request.Request(
         url=f"{settings.openai_api_base_url}/responses",
         data=payload,
@@ -770,21 +948,35 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         except json.JSONDecodeError:
             detail = error_body or "OpenAI request failed."
 
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"OpenAI extraction request failed: {detail}",
         ) from exc
     except error.URLError as exc:
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to reach the OpenAI API for receipt extraction.",
         ) from exc
 
-    response_text = _extract_output_text(response_payload)
+    try:
+        response_text = _extract_output_text(response_payload)
+    except HTTPException as exc:
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+        raise exc
 
     try:
         parsed_output = json.loads(response_text)
     except json.JSONDecodeError as exc:
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="OpenAI returned invalid JSON for receipt extraction.",
@@ -793,9 +985,12 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
     try:
         extracted_fields = ExtractedExpenseFields.validate_llm_output(parsed_output)
     except ValueError as exc:
+        if _has_heuristic_signal(heuristic_fields):
+            return heuristic_fields
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 
-    return _apply_fallbacks(extracted_fields, ocr_text)
+    return _merge_hybrid_extraction(extracted_fields, heuristic_candidates, ocr_text)
