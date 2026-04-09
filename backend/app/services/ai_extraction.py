@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.db.database import get_vendor_learning_hint
-from app.schemas.uploads import ExtractedExpenseFields
+from app.schemas.uploads import ExtractedExpenseFields, ExtractedLineItem
 
 
 EXPENSE_CATEGORIES = [
@@ -167,6 +167,15 @@ DATE_FORMATS = (
     "%d%m%y",
 )
 
+PAYMENT_METHOD_PATTERNS = (
+    ("paypal", ("paypal", "paypal email")),
+    ("bank_transfer", ("bank transfer", "banktransfer", "ach", "routing")),
+    ("wire_transfer", ("wire transfer", "swift", "iban")),
+    ("card", ("visa", "mastercard", "amex", "american express", "credit card", "debit card", "card ending")),
+    ("check", ("check", "cheque")),
+    ("cash", ("cash",)),
+)
+
 GENERIC_VENDOR_HINTS = (
     "receipt",
     "invoice",
@@ -182,7 +191,7 @@ GENERIC_VENDOR_HINTS = (
 
 @dataclass(frozen=True)
 class HeuristicFieldCandidate:
-    value: str | float | None
+    value: object | None
     source: str | None = None
 
 
@@ -192,6 +201,12 @@ class HeuristicExtractionCandidates:
     amount: HeuristicFieldCandidate
     date: HeuristicFieldCandidate
     category: HeuristicFieldCandidate
+    subtotal: HeuristicFieldCandidate
+    tax_amount: HeuristicFieldCandidate
+    receipt_number: HeuristicFieldCandidate
+    due_date: HeuristicFieldCandidate
+    payment_method: HeuristicFieldCandidate
+    line_items: HeuristicFieldCandidate
 
 
 def _extraction_schema() -> dict:
@@ -223,8 +238,88 @@ def _extraction_schema() -> dict:
                 ],
                 "description": "A simple expense category for the receipt.",
             },
+            "subtotal": {
+                "type": ["number", "null"],
+                "description": "The subtotal before tax when visible on the receipt.",
+            },
+            "tax_amount": {
+                "type": ["number", "null"],
+                "description": "The tax amount charged on the receipt when visible.",
+            },
+            "receipt_number": {
+                "type": ["string", "null"],
+                "description": "The receipt, invoice, or reference number when visible.",
+            },
+            "due_date": {
+                "type": ["string", "null"],
+                "description": "The due date in YYYY-MM-DD format when visible.",
+                "format": "date",
+            },
+            "payment_method": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "enum": [
+                            "card",
+                            "cash",
+                            "paypal",
+                            "bank_transfer",
+                            "wire_transfer",
+                            "check",
+                            "other",
+                        ],
+                    },
+                    {
+                        "type": "null",
+                    },
+                ],
+                "description": "The payment method when visible.",
+            },
+            "line_items": {
+                "type": "array",
+                "description": "Line items when they can be identified safely from the OCR text.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "The line item description.",
+                        },
+                        "quantity": {
+                            "type": ["number", "null"],
+                            "description": "The purchased quantity when visible.",
+                        },
+                        "unit_price": {
+                            "type": ["number", "null"],
+                            "description": "The unit price when visible.",
+                        },
+                        "line_total": {
+                            "type": ["number", "null"],
+                            "description": "The line total when visible.",
+                        },
+                    },
+                    "required": [
+                        "description",
+                        "quantity",
+                        "unit_price",
+                        "line_total",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
         },
-        "required": ["vendor", "amount", "date", "category"],
+        "required": [
+            "vendor",
+            "amount",
+            "date",
+            "category",
+            "subtotal",
+            "tax_amount",
+            "receipt_number",
+            "due_date",
+            "payment_method",
+            "line_items",
+        ],
         "additionalProperties": False,
     }
 
@@ -248,6 +343,34 @@ def _response_payload(
     if heuristic_candidates.category.value:
         heuristic_lines.append(
             f"- category candidate: {heuristic_candidates.category.value} ({heuristic_candidates.category.source})"
+        )
+    if heuristic_candidates.subtotal.value is not None:
+        heuristic_lines.append(
+            f"- subtotal candidate: {heuristic_candidates.subtotal.value} ({heuristic_candidates.subtotal.source})"
+        )
+    if heuristic_candidates.tax_amount.value is not None:
+        heuristic_lines.append(
+            f"- tax amount candidate: {heuristic_candidates.tax_amount.value} ({heuristic_candidates.tax_amount.source})"
+        )
+    if heuristic_candidates.receipt_number.value:
+        heuristic_lines.append(
+            f"- receipt number candidate: {heuristic_candidates.receipt_number.value} ({heuristic_candidates.receipt_number.source})"
+        )
+    if heuristic_candidates.due_date.value:
+        heuristic_lines.append(
+            f"- due date candidate: {heuristic_candidates.due_date.value} ({heuristic_candidates.due_date.source})"
+        )
+    if heuristic_candidates.payment_method.value:
+        heuristic_lines.append(
+            f"- payment method candidate: {heuristic_candidates.payment_method.value} ({heuristic_candidates.payment_method.source})"
+        )
+    if heuristic_candidates.line_items.value:
+        summarized_items = [
+            f"{item.description} | qty={item.quantity} | unit={item.unit_price} | total={item.line_total}"
+            for item in heuristic_candidates.line_items.value[:6]
+        ]
+        heuristic_lines.append(
+            "- line item candidates:\n  - " + "\n  - ".join(summarized_items)
         )
 
     heuristic_section = "\n".join(heuristic_lines) or "- no strong heuristic candidates were found"
@@ -281,7 +404,10 @@ def _response_payload(
                     "- vendor should be the seller or merchant\n"
                     "- amount should be the final total actually charged\n"
                     "- date should be the receipt or invoice date\n"
-                    "- category should use the provided enum only\n\n"
+                    "- category should use the provided enum only\n"
+                    "- subtotal and tax_amount should be populated when visible\n"
+                    "- due_date should only be used for the due date, never the receipt date\n"
+                    "- line_items should be returned only when the OCR clearly supports them\n\n"
                     "Heuristic candidates from deterministic parsing:\n"
                     f"{heuristic_section}\n\n"
                     f"OCR text:\n{ocr_text}"
@@ -560,7 +686,80 @@ def _extract_line_item_amounts(ocr_text: str) -> list[float]:
     return amounts
 
 
-def _extract_tax_amount(ocr_text: str, subtotal: float | None) -> float | None:
+def _extract_line_items(ocr_text: str) -> list[ExtractedLineItem]:
+    line_items: list[ExtractedLineItem] = []
+
+    for line in _iter_non_empty_lines(ocr_text):
+        if not _looks_like_item_row(line):
+            continue
+
+        quantity_match = re.match(r"^(\d+(?:\.\d+)?)\s+(.*)$", line.strip())
+        if not quantity_match:
+            continue
+
+        try:
+            quantity = float(quantity_match.group(1))
+        except ValueError:
+            quantity = None
+
+        remainder = quantity_match.group(2).strip()
+        amount_candidates = _extract_amount_candidates(
+            remainder,
+            allow_implied_cents=True,
+            drop_percentage_values=True,
+        )
+        if not amount_candidates:
+            continue
+
+        description = _clean_line(remainder[: amount_candidates[0][0]])
+        if not description or len(description) < 2:
+            continue
+
+        unit_price = amount_candidates[0][1] if len(amount_candidates) >= 2 else None
+        line_total = amount_candidates[-1][1]
+
+        try:
+            line_items.append(
+                ExtractedLineItem.model_validate(
+                    {
+                        "description": description,
+                        "quantity": quantity,
+                        "unit_price": unit_price,
+                        "line_total": line_total,
+                    }
+                )
+            )
+        except Exception:
+            continue
+
+    return line_items
+
+
+def _extract_subtotal_candidate(
+    ocr_text: str, line_items: list[ExtractedLineItem]
+) -> tuple[float | None, str | None]:
+    subtotal = _extract_labeled_amount(
+        ocr_text,
+        include_labels=("subtotal",),
+        allow_implied_cents=True,
+    )
+    if subtotal is not None:
+        return subtotal, "subtotal_label"
+
+    if line_items:
+        computed_subtotal = round(
+            sum(item.line_total or 0 for item in line_items if item.line_total is not None),
+            2,
+        )
+        if computed_subtotal > 0:
+            return computed_subtotal, "line_item_sum"
+
+    return None, None
+
+
+def _extract_tax_amount_candidate(
+    ocr_text: str, subtotal: float | None
+) -> tuple[float | None, str | None]:
     tax_candidates: list[float] = []
 
     for line in _iter_non_empty_lines(ocr_text):
@@ -597,9 +796,14 @@ def _extract_tax_amount(ocr_text: str, subtotal: float | None) -> float | None:
             tax_candidates.append(implied_candidates[-1])
 
     if not tax_candidates:
-        return None
+        return None, None
 
-    return tax_candidates[-1]
+    return tax_candidates[-1], "tax_line_or_percentage"
+
+
+def _extract_tax_amount(ocr_text: str, subtotal: float | None) -> float | None:
+    tax_amount, _ = _extract_tax_amount_candidate(ocr_text, subtotal)
+    return tax_amount
 
 
 def _extract_total_amount_from_ocr(ocr_text: str) -> float | None:
@@ -786,13 +990,103 @@ def _extract_date_candidate(ocr_text: str) -> tuple[str | None, str | None]:
     return parsed_date, source
 
 
-def _infer_category_from_ocr(ocr_text: str) -> str | None:
+def _extract_due_date_candidate(ocr_text: str) -> tuple[str | None, str | None]:
+    candidate_values: list[tuple[int, str, str]] = []
+    generic_pattern = re.compile(r"\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b")
+
+    for line in _iter_non_empty_lines(ocr_text):
+        normalized_line = line.lower()
+        if "due date" not in normalized_line:
+            continue
+
+        matches = generic_pattern.findall(line)
+        for match in matches:
+            parsed_date = _parse_date_token(match)
+            if parsed_date:
+                candidate_values.append((100, parsed_date, "due_date"))
+
+    if not candidate_values:
+        return None, None
+
+    _, parsed_date, source = max(candidate_values, key=lambda item: item[0])
+    return parsed_date, source
+
+
+def _normalize_identifier_token(token: str) -> str:
+    normalized = token.strip().strip(":#").upper()
+    if not normalized:
+        return normalized
+
+    normalized = normalized.translate(
+        str.maketrans(
+            {
+                "O": "0",
+                "I": "1",
+                "L": "1",
+            }
+        )
+    )
+    normalized = re.sub(r"[^A-Z0-9-]", "", normalized)
+    return normalized
+
+
+def _extract_receipt_number_candidate(ocr_text: str) -> tuple[str | None, str | None]:
+    label_pattern = re.compile(
+        r"(?:receipt|invoice|order|reference|ref|po|p\.o\.)\s*(?:#|no|number)?\s*[:#]?\s*([A-Za-z0-9-]{3,24})",
+        re.IGNORECASE,
+    )
+
+    for line in _iter_non_empty_lines(ocr_text):
+        if not re.search(r"(receipt|invoice|reference|ref|po|p\.o\.)", line, re.IGNORECASE):
+            continue
+
+        match = label_pattern.search(line)
+        if not match:
+            continue
+
+        token = _normalize_identifier_token(match.group(1))
+        if token and not token.isdigit():
+            return token, "labeled_receipt_number"
+        if token:
+            return token, "numeric_receipt_number"
+
+    return None, None
+
+
+def _extract_payment_method_candidate(ocr_text: str) -> tuple[str | None, str | None]:
     normalized_text = ocr_text.lower()
+    matches: list[str] = []
+    for payment_method, hints in PAYMENT_METHOD_PATTERNS:
+        if any(hint in normalized_text for hint in hints):
+            matches.append(payment_method)
+
+    unique_matches = list(dict.fromkeys(matches))
+    if len(unique_matches) == 1:
+        return unique_matches[0], "payment_keyword"
+
+    return None, None
+
+
+def _infer_category_from_ocr(
+    ocr_text: str,
+    *,
+    vendor: str | None = None,
+    line_items: list[ExtractedLineItem] | None = None,
+) -> str | None:
+    normalized_text = ocr_text.lower()
+    normalized_vendor = (vendor or "").lower()
+    line_item_text = " ".join(item.description.lower() for item in line_items or [])
     scores: dict[str, int] = {}
 
     for category, keywords in CATEGORY_KEYWORDS.items():
         category_score = sum(
             1 for keyword in keywords if keyword in normalized_text
+        )
+        category_score += sum(
+            2 for keyword in keywords if normalized_vendor and keyword in normalized_vendor
+        )
+        category_score += sum(
+            2 for keyword in keywords if line_item_text and keyword in line_item_text
         )
         if category_score:
             scores[category] = category_score
@@ -803,8 +1097,17 @@ def _infer_category_from_ocr(ocr_text: str) -> str | None:
     return max(scores.items(), key=lambda item: item[1])[0]
 
 
-def _extract_category_candidate(ocr_text: str) -> HeuristicFieldCandidate:
-    category = _infer_category_from_ocr(ocr_text)
+def _extract_category_candidate(
+    ocr_text: str,
+    *,
+    vendor: str | None = None,
+    line_items: list[ExtractedLineItem] | None = None,
+) -> HeuristicFieldCandidate:
+    category = _infer_category_from_ocr(
+        ocr_text,
+        vendor=vendor,
+        line_items=line_items,
+    )
     if not category:
         return HeuristicFieldCandidate(value=None, source=None)
 
@@ -812,14 +1115,37 @@ def _extract_category_candidate(ocr_text: str) -> HeuristicFieldCandidate:
 
 
 def _build_heuristic_candidates(ocr_text: str) -> HeuristicExtractionCandidates:
+    line_items = _extract_line_items(ocr_text)
+    subtotal, subtotal_source = _extract_subtotal_candidate(ocr_text, line_items)
+    tax_amount, tax_amount_source = _extract_tax_amount_candidate(ocr_text, subtotal)
     amount, amount_source = _extract_total_amount_candidate(ocr_text)
     date, date_source = _extract_date_candidate(ocr_text)
+    receipt_number, receipt_number_source = _extract_receipt_number_candidate(ocr_text)
+    due_date, due_date_source = _extract_due_date_candidate(ocr_text)
+    payment_method, payment_method_source = _extract_payment_method_candidate(ocr_text)
+    vendor_candidate = _extract_vendor_candidate(ocr_text)
 
     return HeuristicExtractionCandidates(
-        vendor=_extract_vendor_candidate(ocr_text),
+        vendor=vendor_candidate,
         amount=HeuristicFieldCandidate(value=amount, source=amount_source),
         date=HeuristicFieldCandidate(value=date, source=date_source),
-        category=_extract_category_candidate(ocr_text),
+        category=_extract_category_candidate(
+            ocr_text,
+            vendor=vendor_candidate.value if isinstance(vendor_candidate.value, str) else None,
+            line_items=line_items,
+        ),
+        subtotal=HeuristicFieldCandidate(value=subtotal, source=subtotal_source),
+        tax_amount=HeuristicFieldCandidate(value=tax_amount, source=tax_amount_source),
+        receipt_number=HeuristicFieldCandidate(
+            value=receipt_number,
+            source=receipt_number_source,
+        ),
+        due_date=HeuristicFieldCandidate(value=due_date, source=due_date_source),
+        payment_method=HeuristicFieldCandidate(
+            value=payment_method,
+            source=payment_method_source,
+        ),
+        line_items=HeuristicFieldCandidate(value=line_items, source="line_item_rows"),
     )
 
 
@@ -839,6 +1165,12 @@ def _heuristics_to_fields(
             "amount": heuristic_candidates.amount.value,
             "date": heuristic_candidates.date.value,
             "category": heuristic_candidates.category.value,
+            "subtotal": heuristic_candidates.subtotal.value,
+            "tax_amount": heuristic_candidates.tax_amount.value,
+            "receipt_number": heuristic_candidates.receipt_number.value,
+            "due_date": heuristic_candidates.due_date.value,
+            "payment_method": heuristic_candidates.payment_method.value,
+            "line_items": heuristic_candidates.line_items.value or [],
         }
     )
 
@@ -870,6 +1202,14 @@ def _apply_vendor_learning_hint(
                 if preferred_category and (not extracted_fields.category or extracted_fields.category == "other")
                 else extracted_fields.category
             ),
+            "subtotal": extracted_fields.subtotal,
+            "tax_amount": extracted_fields.tax_amount,
+            "receipt_number": extracted_fields.receipt_number,
+            "due_date": extracted_fields.due_date.isoformat()
+            if extracted_fields.due_date
+            else None,
+            "payment_method": extracted_fields.payment_method,
+            "line_items": extracted_fields.line_items,
         }
     )
 
@@ -925,12 +1265,52 @@ def _merge_hybrid_extraction(
         if not updated_category or updated_category == "other":
             updated_category = heuristic_category
 
+    updated_subtotal = extracted_fields.subtotal
+    heuristic_subtotal = heuristic_candidates.subtotal.value
+    if isinstance(heuristic_subtotal, (int, float)) and updated_subtotal is None:
+        updated_subtotal = float(heuristic_subtotal)
+
+    updated_tax_amount = extracted_fields.tax_amount
+    heuristic_tax_amount = heuristic_candidates.tax_amount.value
+    if isinstance(heuristic_tax_amount, (int, float)) and updated_tax_amount is None:
+        updated_tax_amount = float(heuristic_tax_amount)
+
+    updated_receipt_number = extracted_fields.receipt_number
+    heuristic_receipt_number = heuristic_candidates.receipt_number.value
+    if isinstance(heuristic_receipt_number, str) and heuristic_receipt_number and not updated_receipt_number:
+        updated_receipt_number = heuristic_receipt_number
+
+    updated_due_date = extracted_fields.due_date.isoformat() if extracted_fields.due_date else None
+    heuristic_due_date = heuristic_candidates.due_date.value
+    if isinstance(heuristic_due_date, str) and heuristic_due_date and not updated_due_date:
+        updated_due_date = heuristic_due_date
+
+    updated_payment_method = extracted_fields.payment_method
+    heuristic_payment_method = heuristic_candidates.payment_method.value
+    if isinstance(heuristic_payment_method, str) and heuristic_payment_method and not updated_payment_method:
+        updated_payment_method = heuristic_payment_method
+
+    updated_line_items = extracted_fields.line_items
+    heuristic_line_items = heuristic_candidates.line_items.value
+    if (
+        isinstance(heuristic_line_items, list)
+        and heuristic_line_items
+        and not updated_line_items
+    ):
+        updated_line_items = heuristic_line_items
+
     return ExtractedExpenseFields.model_validate(
         {
             "vendor": updated_vendor,
             "amount": updated_amount,
             "date": updated_date,
             "category": updated_category,
+            "subtotal": updated_subtotal,
+            "tax_amount": updated_tax_amount,
+            "receipt_number": updated_receipt_number,
+            "due_date": updated_due_date,
+            "payment_method": updated_payment_method,
+            "line_items": updated_line_items,
         }
     )
 

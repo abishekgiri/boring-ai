@@ -85,6 +85,12 @@ function createEmptyExtractedFields() {
     amount: "",
     date: "",
     category: "",
+    subtotal: "",
+    tax_amount: "",
+    receipt_number: "",
+    due_date: "",
+    payment_method: "",
+    line_items: [],
   };
 }
 
@@ -97,7 +103,75 @@ function mapExtractedFields(fields) {
         : String(fields.amount),
     date: fields?.date ?? "",
     category: fields?.category ?? "",
+    subtotal:
+      fields?.subtotal === null || fields?.subtotal === undefined
+        ? ""
+        : String(fields.subtotal),
+    tax_amount:
+      fields?.tax_amount === null || fields?.tax_amount === undefined
+        ? ""
+        : String(fields.tax_amount),
+    receipt_number: fields?.receipt_number ?? "",
+    due_date: fields?.due_date ?? "",
+    payment_method: fields?.payment_method ?? "",
+    line_items: Array.isArray(fields?.line_items)
+      ? fields.line_items.map((item) => ({
+          description: item?.description ?? "",
+          quantity:
+            item?.quantity === null || item?.quantity === undefined
+              ? ""
+              : String(item.quantity),
+          unit_price:
+            item?.unit_price === null || item?.unit_price === undefined
+              ? ""
+              : String(item.unit_price),
+          line_total:
+            item?.line_total === null || item?.line_total === undefined
+              ? ""
+              : String(item.line_total),
+        }))
+      : [],
   };
+}
+
+function countCoreFields(fields) {
+  return [fields.vendor, fields.amount, fields.date, fields.category].filter(Boolean)
+    .length;
+}
+
+function hasAnyExtractedField(fields) {
+  return (
+    Boolean(fields.vendor) ||
+    Boolean(fields.amount) ||
+    Boolean(fields.date) ||
+    Boolean(fields.category) ||
+    Boolean(fields.subtotal) ||
+    Boolean(fields.tax_amount) ||
+    Boolean(fields.receipt_number) ||
+    Boolean(fields.due_date) ||
+    Boolean(fields.payment_method) ||
+    (Array.isArray(fields.line_items) && fields.line_items.length > 0)
+  );
+}
+
+function formatPaymentMethod(value) {
+  if (!value) {
+    return "Not detected";
+  }
+
+  return String(value)
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatQuantityValue(value) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity)) {
+    return String(value ?? "");
+  }
+
+  return Number.isInteger(quantity) ? String(quantity) : String(quantity);
 }
 
 function buildLearningContext(snapshot, currentFields) {
@@ -188,6 +262,18 @@ function buildReviewHints(fields) {
 
   if (!fields.category) {
     hints.push("Category still needs a human decision. Choose the closest fit before saving.");
+  }
+
+  if (fields.subtotal && fields.tax_amount) {
+    hints.push("Subtotal and tax were detected separately. Compare them against the receipt to confirm the final total.");
+  }
+
+  if (fields.receipt_number) {
+    hints.push("Receipt number was detected. Keep it in mind when checking for duplicates or sharing the record with an accountant.");
+  }
+
+  if (Array.isArray(fields.line_items) && fields.line_items.length > 0) {
+    hints.push("Line items were detected. Use them to verify whether the category and subtotal make sense.");
   }
 
   if (hints.length === 0) {
@@ -350,12 +436,20 @@ function buildFieldValidation(uploadedFile, ocrText, fields) {
   if (!fields.amount || Number.isNaN(amount) || amount <= 0) {
     blocking.push("Amount must be greater than 0 before saving.");
   } else {
+    const extractedSubtotal = Number(fields.subtotal);
+    const extractedTaxAmount = Number(fields.tax_amount);
     const totalFromOcr = extractLabeledAmount(
       ocrText,
       /(receipt total|grand total|amount due|total due|balance due|total)/i
     );
-    const subtotalFromOcr = extractLabeledAmount(ocrText, /subtotal/i);
-    const taxFromOcr = extractLabeledAmount(ocrText, /(sales tax|tax)/i);
+    const subtotalFromOcr =
+      Number.isFinite(extractedSubtotal) && extractedSubtotal > 0
+        ? extractedSubtotal
+        : extractLabeledAmount(ocrText, /subtotal/i);
+    const taxFromOcr =
+      Number.isFinite(extractedTaxAmount) && extractedTaxAmount >= 0
+        ? extractedTaxAmount
+        : extractLabeledAmount(ocrText, /(sales tax|tax)/i);
 
     if (amount > 100000) {
       warnings.push(`Amount looks unusually large at ${formatCurrencyValue(amount)}. Double-check that OCR did not over-read a number.`);
@@ -733,7 +827,7 @@ function buildOcrAssessment(ocrText) {
 }
 
 function buildExtractionAssessment(fields, ocrAssessment) {
-  const populatedCount = Object.values(fields).filter(Boolean).length;
+  const populatedCount = countCoreFields(fields);
 
   if (!populatedCount) {
     return null;
@@ -764,6 +858,18 @@ function buildExtractionAssessment(fields, ocrAssessment) {
     positives.push("Category is selected.");
   } else {
     warnings.push("Category still needs a human decision.");
+  }
+
+  if (fields.subtotal) {
+    positives.push("Subtotal was detected separately.");
+  }
+
+  if (fields.tax_amount) {
+    positives.push("Tax amount was detected separately.");
+  }
+
+  if (Array.isArray(fields.line_items) && fields.line_items.length > 0) {
+    positives.push(`Detected ${fields.line_items.length} line item${fields.line_items.length === 1 ? "" : "s"} for deeper review.`);
   }
 
   if (ocrAssessment?.level === "warning") {
@@ -1545,7 +1651,7 @@ export default function UploadForm({ apiBaseUrl }) {
     }
   }
 
-  const hasExtractedFields = Object.values(extractedFields).some(Boolean);
+  const hasExtractedFields = hasAnyExtractedField(extractedFields);
   const reviewHints = buildReviewHints(extractedFields);
   const ocrAssessment = buildOcrAssessment(ocrText);
   const extractionAssessment = buildExtractionAssessment(
@@ -1964,6 +2070,142 @@ export default function UploadForm({ apiBaseUrl }) {
                 </p>
               ) : null}
             </label>
+          </div>
+        ) : null}
+
+        {hasExtractedFields &&
+        (
+          extractedFields.subtotal ||
+          extractedFields.tax_amount ||
+          extractedFields.receipt_number ||
+          extractedFields.due_date ||
+          extractedFields.payment_method
+        ) ? (
+          <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-stone-50/80 p-5">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                Receipt details
+              </p>
+              <h3 className="mt-3 font-serif text-2xl tracking-tight text-stone-950">
+                Structured details beyond the core save fields
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-stone-600">
+                These fields are extracted to make the document easier to trust
+                and review. They do not change the save flow, but they help you
+                verify the draft before you commit it.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                  Subtotal
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {extractedFields.subtotal
+                    ? formatCurrencyValue(extractedFields.subtotal)
+                    : "Not detected"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                  Tax amount
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {extractedFields.tax_amount
+                    ? formatCurrencyValue(extractedFields.tax_amount)
+                    : "Not detected"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                  Receipt number
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {extractedFields.receipt_number || "Not detected"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                  Due date
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {extractedFields.due_date
+                    ? formatShortDate(extractedFields.due_date)
+                    : "Not detected"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                  Payment method
+                </p>
+                <p className="mt-2 text-sm font-medium text-stone-900">
+                  {formatPaymentMethod(extractedFields.payment_method)}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {hasExtractedFields &&
+        Array.isArray(extractedFields.line_items) &&
+        extractedFields.line_items.length > 0 ? (
+          <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/70 p-5">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                Line items
+              </p>
+              <h3 className="mt-3 font-serif text-2xl tracking-tight text-stone-950">
+                Detected receipt lines
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-stone-600">
+                These rows can help verify the subtotal, category, and whether
+                the document really matches the expense you are about to save.
+              </p>
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-[1.25rem] border border-stone-900/10">
+                <thead className="bg-stone-950 text-left text-stone-50">
+                  <tr>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                      Description
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                      Qty
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                      Unit price
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                      Line total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {extractedFields.line_items.map((item, index) => (
+                    <tr className="border-t border-stone-900/8" key={`${item.description}-${index}`}>
+                      <td className="px-4 py-4 text-sm font-medium text-stone-900">
+                        {item.description || "Unlabeled item"}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-stone-700">
+                        {item.quantity ? formatQuantityValue(item.quantity) : "—"}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-stone-700">
+                        {item.unit_price
+                          ? formatCurrencyValue(item.unit_price)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-stone-700">
+                        {item.line_total
+                          ? formatCurrencyValue(item.line_total)
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
 
