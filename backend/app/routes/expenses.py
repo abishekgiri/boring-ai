@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from app.core.config import get_settings
 from app.db.database import (
     delete_expense_by_id,
+    find_duplicate_expenses,
     get_expense_by_id,
     insert_expense,
     list_expenses,
@@ -18,6 +19,9 @@ from app.db.database import (
 )
 from app.schemas.expenses import (
     ExpenseCreate,
+    ExpenseDuplicateCheck,
+    ExpenseDuplicateResponse,
+    DuplicateExpenseRecord,
     ExpenseListResponse,
     ExpenseRecord,
     ExpenseUpdate,
@@ -57,6 +61,19 @@ def _get_filtered_expenses(
     )
 
 
+def _build_duplicate_match_reason(
+    candidate: ExpenseRecord, payload: ExpenseDuplicateCheck
+) -> str:
+    reasons = ["same vendor", "same amount"]
+    if candidate.date == payload.date:
+        reasons.append("same date")
+    else:
+        day_distance = abs((candidate.date - payload.date).days)
+        reasons.append(f"{day_distance}-day date gap")
+
+    return ", ".join(reasons)
+
+
 @router.post("", response_model=ExpenseRecord, status_code=201)
 def create_expense(payload: ExpenseCreate) -> ExpenseRecord:
     upload_record = get_upload_metadata(payload.upload_id)
@@ -71,6 +88,27 @@ def create_expense(payload: ExpenseCreate) -> ExpenseRecord:
         file_path=_build_file_path(upload_record.stored_filename),
         raw_ocr_text=upload_record.ocr_text,
     )
+
+
+@router.post("/check-duplicates", response_model=ExpenseDuplicateResponse)
+def check_duplicate_expenses(payload: ExpenseDuplicateCheck) -> ExpenseDuplicateResponse:
+    items = find_duplicate_expenses(
+        vendor=payload.vendor,
+        amount=payload.amount,
+        expense_date=payload.date,
+        exclude_upload_id=payload.upload_id,
+    )
+
+    duplicate_items = [
+        DuplicateExpenseRecord(
+            **item.model_dump(),
+            match_reason=_build_duplicate_match_reason(item, payload),
+            date_distance_days=abs((item.date - payload.date).days),
+        )
+        for item in items
+    ]
+
+    return ExpenseDuplicateResponse(items=duplicate_items, total=len(duplicate_items))
 
 
 @router.get("", response_model=ExpenseListResponse)

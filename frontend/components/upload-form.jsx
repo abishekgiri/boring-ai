@@ -293,6 +293,14 @@ function formatCurrencyValue(value) {
   }).format(amount);
 }
 
+function formatShortDate(value) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function buildFieldValidation(uploadedFile, ocrText, fields) {
   const blocking = [];
   const warnings = [];
@@ -1099,6 +1107,7 @@ export default function UploadForm({ apiBaseUrl }) {
   const [ocrErrorMessage, setOcrErrorMessage] = useState("");
   const [extractionErrorMessage, setExtractionErrorMessage] = useState("");
   const [saveErrorMessage, setSaveErrorMessage] = useState("");
+  const [duplicateErrorMessage, setDuplicateErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState(
     "Choose a receipt image or PDF, or load the demo receipt, to get started."
   );
@@ -1109,6 +1118,8 @@ export default function UploadForm({ apiBaseUrl }) {
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isPreparingDemo, setIsPreparingDemo] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+  const [duplicateMatches, setDuplicateMatches] = useState([]);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -1131,6 +1142,9 @@ export default function UploadForm({ apiBaseUrl }) {
     setOcrErrorMessage("");
     setExtractionErrorMessage("");
     setSaveErrorMessage("");
+    setDuplicateErrorMessage("");
+    setDuplicateMatches([]);
+    setIsCheckingDuplicates(false);
     setSavedExpense(null);
   }
 
@@ -1372,6 +1386,89 @@ export default function UploadForm({ apiBaseUrl }) {
     }));
   }
 
+  useEffect(() => {
+    const vendor = extractedFields.vendor.trim();
+    const amount = Number(extractedFields.amount);
+    const date = extractedFields.date;
+
+    if (
+      !uploadedFile?.id ||
+      !vendor ||
+      !date ||
+      !extractedFields.amount ||
+      Number.isNaN(amount) ||
+      amount <= 0 ||
+      savedExpense
+    ) {
+      setIsCheckingDuplicates(false);
+      setDuplicateErrorMessage("");
+      setDuplicateMatches([]);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setIsCheckingDuplicates(true);
+      setDuplicateErrorMessage("");
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/expenses/check-duplicates`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            upload_id: uploadedFile.id,
+            vendor,
+            amount,
+            date,
+          }),
+          signal: controller.signal,
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            payload?.detail ?? "Duplicate check failed. Please try again."
+          );
+        }
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setDuplicateMatches(Array.isArray(payload?.items) ? payload.items : []);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        setDuplicateMatches([]);
+        setDuplicateErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Duplicate check failed. Please try again."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsCheckingDuplicates(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [
+    apiBaseUrl,
+    extractedFields.amount,
+    extractedFields.date,
+    extractedFields.vendor,
+    savedExpense,
+    uploadedFile?.id,
+  ]);
+
   async function handleSaveExpense() {
     const validationError = validateExpenseFields(
       uploadedFile,
@@ -1410,6 +1507,8 @@ export default function UploadForm({ apiBaseUrl }) {
       }
 
       setSavedExpense(payload);
+      setDuplicateMatches([]);
+      setDuplicateErrorMessage("");
       setStatusMessage("Expense saved successfully.");
     } catch (error) {
       setSavedExpense(null);
@@ -1848,6 +1947,104 @@ export default function UploadForm({ apiBaseUrl }) {
 
         {hasExtractedFields ? (
           <ValidationPanel validation={fieldValidation} />
+        ) : null}
+
+        {hasExtractedFields && (
+          isCheckingDuplicates ||
+          duplicateErrorMessage ||
+          duplicateMatches.length > 0
+        ) ? (
+          <div className="mt-6 rounded-[1.5rem] border border-amber-900/10 bg-amber-50/80 px-5 py-4 text-amber-950">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">
+              Duplicate check
+            </p>
+            <h3 className="mt-3 font-serif text-2xl tracking-tight">
+              {isCheckingDuplicates
+                ? "Checking existing expenses"
+                : duplicateMatches.length > 0
+                  ? "Possible duplicates found"
+                  : "Duplicate check unavailable"}
+            </h3>
+
+            {isCheckingDuplicates ? (
+              <p className="mt-3 text-sm leading-7">
+                Comparing this draft against existing expenses with the same
+                vendor, amount, and nearby date.
+              </p>
+            ) : null}
+
+            {duplicateErrorMessage ? (
+              <p className="mt-3 text-sm leading-7">
+                {duplicateErrorMessage}
+              </p>
+            ) : null}
+
+            {duplicateMatches.length > 0 ? (
+              <>
+                <p className="mt-3 text-sm leading-7">
+                  Similar expenses already exist. You can still save this one,
+                  but it is worth checking whether the record is a true new
+                  expense or a duplicate.
+                </p>
+
+                <div className="mt-4 space-y-3">
+                  {duplicateMatches.map((match) => (
+                    <div
+                      className="rounded-2xl border border-amber-900/10 bg-white/80 px-4 py-4"
+                      key={match.id}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-stone-900">
+                            {match.vendor}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                            {match.match_reason}
+                          </p>
+                        </div>
+
+                        <Link
+                          className="inline-flex min-h-10 items-center justify-center rounded-full border border-amber-900/10 bg-amber-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-950 transition hover:bg-amber-200"
+                          href={`/expenses/${match.id}`}
+                        >
+                          Open record
+                        </Link>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                            Amount
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-stone-900">
+                            {formatCurrencyValue(match.amount)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                            Date
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-stone-900">
+                            {formatShortDate(match.date)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+                            Date gap
+                          </p>
+                          <p className="mt-2 text-sm font-medium text-stone-900">
+                            {match.date_distance_days === 0
+                              ? "Same day"
+                              : `${match.date_distance_days} day${match.date_distance_days === 1 ? "" : "s"}`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="mt-6 flex flex-col gap-4 border-t border-stone-900/10 pt-6 sm:flex-row sm:items-center sm:justify-between">

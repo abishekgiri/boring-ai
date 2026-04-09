@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+import re
 from typing import List, Optional
 
 from fastapi import HTTPException, status
@@ -36,6 +37,28 @@ def initialize_database() -> None:
     with closing(_get_connection()) as connection:
         connection.execute(CREATE_EXPENSES_TABLE_SQL)
         connection.commit()
+
+
+def _normalize_vendor_for_match(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _vendors_look_similar(first: str, second: str) -> bool:
+    normalized_first = _normalize_vendor_for_match(first)
+    normalized_second = _normalize_vendor_for_match(second)
+    if not normalized_first or not normalized_second:
+        return False
+
+    if normalized_first == normalized_second:
+        return True
+
+    if len(normalized_first) >= 5 and normalized_first in normalized_second:
+        return True
+
+    if len(normalized_second) >= 5 and normalized_second in normalized_first:
+        return True
+
+    return False
 
 
 def insert_expense(
@@ -191,6 +214,59 @@ def list_expenses(
         rows = connection.execute(query, parameters).fetchall()
 
     return [_row_to_expense(row) for row in rows]
+
+
+def find_duplicate_expenses(
+    *,
+    vendor: str,
+    amount: float,
+    expense_date: date,
+    exclude_upload_id: Optional[str] = None,
+) -> List[ExpenseRecord]:
+    date_from = expense_date - timedelta(days=3)
+    date_to = expense_date + timedelta(days=3)
+    query_lines = [
+        """
+        SELECT
+            id,
+            upload_id,
+            file_path,
+            vendor,
+            amount,
+            expense_date,
+            category,
+            raw_ocr_text,
+            created_at
+        FROM expenses
+        WHERE amount BETWEEN ? AND ?
+          AND expense_date BETWEEN ? AND ?
+        """
+    ]
+    parameters: list[object] = [
+        amount - 0.01,
+        amount + 0.01,
+        date_from.isoformat(),
+        date_to.isoformat(),
+    ]
+
+    if exclude_upload_id:
+        query_lines.append("AND upload_id != ?")
+        parameters.append(exclude_upload_id)
+
+    query_lines.append(
+        "ORDER BY ABS(julianday(expense_date) - julianday(?)) ASC, created_at DESC"
+    )
+    parameters.append(expense_date.isoformat())
+
+    with closing(_get_connection()) as connection:
+        rows = connection.execute("\n".join(query_lines), parameters).fetchall()
+
+    candidate_records = [_row_to_expense(row) for row in rows]
+    return [
+        candidate
+        for candidate in candidate_records
+        if _vendors_look_similar(candidate.vendor, vendor)
+    ]
 
 
 def delete_expense_by_id(expense_id: int) -> None:
