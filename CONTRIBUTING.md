@@ -4,6 +4,26 @@ Thanks for your interest in contributing to `boring-ai`.
 
 `boring-ai` is a self-hosted AI back office for freelancers. The goal is to keep the project practical, simple, and easy to work on. Small, focused improvements are better than large unclear changes.
 
+## Contribution rules
+
+- keep changes small and focused, with one feature or fix per pull request
+- do not mix multiple unrelated changes in one pull request
+- open an issue first for large features or major changes
+- prefer simple and readable code over complex solutions
+- do not introduce heavy dependencies without discussion
+- keep the existing structure and patterns consistent
+- reuse existing logic instead of duplicating code
+- validate inputs properly in both backend and frontend changes
+- handle error, loading, and empty states clearly in UI work
+- do not break the core flow: upload -> OCR -> extract -> save -> workspace
+- write clear and descriptive commit messages
+- remove debug code such as `console.log` or `print` statements before submitting
+- do not commit secrets or local environment files
+- ensure the project builds successfully before submitting a pull request
+- add a short note on how your change was tested
+- include screenshots in the pull request for UI changes
+- stay respectful and constructive in discussions
+
 ## Ways to contribute
 
 You can help by:
