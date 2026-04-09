@@ -1,91 +1,119 @@
 # boring-ai
 
-Self-hosted AI back office for freelancers.
+> Self-hosted AI back office for freelancers  
+> Turn receipts into structured expenses in seconds.
 
-`boring-ai` turns receipt files into structured expenses you can review, save, browse, clean up, and export. The product stays intentionally narrow for V1: upload receipts, run OCR, extract the key fields with AI, save the result, and export accountant-friendly CSV.
+---
 
-## What works today
+## What it does
 
-- upload receipt images and PDFs
-- preview uploaded files in the UI
-- run OCR with Tesseract on images and PDFs
-- extract `vendor`, `amount`, `date`, and `category` with OpenAI
-- review and edit extracted fields before save
-- save expenses to local SQLite
-- browse all saved expenses in a dedicated workspace
-- search by vendor
-- filter by category and date range
-- export the current filtered workspace as CSV
-- delete bad records from the workspace
+`boring-ai` takes messy receipts and turns them into clean, structured expense data.
 
-## Product direction
+- Upload receipts as images or PDFs
+- Extract text using OCR
+- Convert text into structured fields using AI
+- Review and edit extracted data
+- Save expenses into a database
+- Browse and filter expenses
+- Export data to CSV
 
-**V1 promise**
+---
 
-Upload receipts -> extract data -> organize expenses -> export CSV
+## Features
 
-**First target user**
+- Receipt upload for images and PDFs
+- OCR with Tesseract
+- AI-powered field extraction for vendor, amount, date, and category
+- Editable review before saving
+- SQLite persistence
+- Expense workspace with search and filters
+- CSV export
+- Delete expenses
 
-Freelancers
+---
 
-**What V1 is not**
+## How it works
 
-- not a full accounting system
-- not a tax filing tool
-- not multi-user yet
-- not local-model-first yet
+```text
+Upload -> OCR -> AI extraction -> Review -> Save -> Browse -> Export
+```
 
-## Current flow
+---
 
-1. Upload a receipt image or PDF.
-2. Run OCR to extract the raw text.
-3. Send OCR text to the extraction endpoint.
-4. Review and correct the AI-filled fields.
-5. Save the expense into SQLite.
-6. Open the expense workspace to search, filter, export, or delete records.
+## Screenshots
 
-## Stack
+Add demo GIFs or screenshots here. This will make the repository much easier to understand at a glance.
 
-- Frontend: Next.js
-- Backend: FastAPI
-- Database: SQLite
-- OCR: Tesseract + pdf2image
-- AI extraction: OpenAI API
-- Storage: local filesystem under `backend/uploads/`
+---
 
-## Project status
+## Project structure
 
-Phases completed so far:
+```text
+boring-ai/
+├── backend/        # FastAPI backend
+├── frontend/       # Next.js frontend
+├── examples/
+├── .env.example
+├── README.md
+└── roadmap.md
+```
 
-- Phase 1: frontend/backend scaffold + health check
-- Phase 2: receipt upload + local storage + preview
-- Phase 3: OCR flow
-- Phase 4: AI extraction + editable review
-- Phase 5: save reviewed expenses to SQLite
-- Phase 6: expense workspace with search and filters
-- Phase 7: CSV export + delete action
+---
 
-## Quick start
+## Local setup
 
-### Prerequisites
+### 1. Install OCR tools
 
-- Python 3.9+
-- Node.js 20+
-- `tesseract`
-- `poppler`
-- an OpenAI API key if you want to use the extraction step
-
-On macOS:
+macOS:
 
 ```bash
 brew install tesseract poppler
 ```
 
-### 1. Configure environment variables
+### 2. Start the backend
 
-Copy values from [`./.env.example`](./.env.example).
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-Backend env vars:
+export APP_ENV=development
+export BACKEND_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+export SQLITE_DATABASE_PATH=backend/data/boring-ai.db
+export OPENAI_API_KEY=your_key_here
+export OPENAI_MODEL=gpt-4o-mini
+export OPENAI_API_BASE_URL=https://api.openai.com/v1
+export OPENAI_TIMEOUT_SECONDS=30
+
+uvicorn app.main:app --reload --port 8000
+```
+
+### 3. Start the frontend
+
+Create `frontend/.env.local` with:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Then run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open: [http://localhost:3000](http://localhost:3000)
+
+If `OPENAI_API_KEY` is not set, upload and OCR still work, but AI extraction will not.
+
+---
+
+## Environment variables
+
+### Backend
 
 - `APP_ENV`
 - `BACKEND_CORS_ORIGINS`
@@ -95,44 +123,13 @@ Backend env vars:
 - `OPENAI_API_BASE_URL`
 - `OPENAI_TIMEOUT_SECONDS`
 
-Frontend env vars:
+### Frontend
 
 - `NEXT_PUBLIC_API_BASE_URL`
 
-Create `frontend/.env.local` with:
+Use [`./.env.example`](./.env.example) as the starting point.
 
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-```
-
-If `OPENAI_API_KEY` is not set, uploads and OCR still work, but `POST /api/uploads/{id}/extract` will return an error until extraction is configured.
-
-### 2. Start the backend
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export APP_ENV=development
-export BACKEND_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-export SQLITE_DATABASE_PATH=backend/data/boring-ai.db
-export OPENAI_API_KEY=your_key_here
-export OPENAI_MODEL=gpt-4o-mini
-export OPENAI_API_BASE_URL=https://api.openai.com/v1
-export OPENAI_TIMEOUT_SECONDS=30
-uvicorn app.main:app --reload --port 8000
-```
-
-### 3. Start the frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
+---
 
 ## API overview
 
@@ -155,50 +152,86 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /api/expenses/export`
 - `DELETE /api/expenses/{id}`
 
-## Notes on privacy
+---
 
-- uploaded files are stored locally under `backend/uploads/files/`
-- upload metadata is stored locally under `backend/uploads/metadata/`
-- expenses are stored in local SQLite
-- the current extraction step calls the OpenAI API when you run `POST /api/uploads/{id}/extract`
-- local model support is planned later, but not part of the current implementation
+## V1 scope
 
-## Current limitations
+This project intentionally stays simple:
 
-- single-user flow only
-- no Docker setup yet
-- no invoice generation yet
-- extraction depends on an OpenAI API key today
+- upload receipts
+- extract OCR text
+- convert OCR text to structured data
+- review and edit fields
+- save expenses
+- browse and filter expenses
+- export CSV
 
-## Repository structure
+---
 
-```text
-boring-ai/
-├── backend/
-│   ├── app/
-│   │   ├── core/
-│   │   ├── db/
-│   │   ├── routes/
-│   │   ├── schemas/
-│   │   └── services/
-│   └── requirements.txt
-├── examples/
-├── frontend/
-│   ├── app/
-│   └── components/
-├── .env.example
-├── README.md
-└── roadmap.md
-```
+## Current status
 
-## Near-term roadmap
+Completed so far:
 
-After the current V1 flow, the next likely steps are:
+- Phase 1: frontend and backend scaffold with health check
+- Phase 2: receipt upload, local storage, and preview
+- Phase 3: OCR flow
+- Phase 4: AI extraction and editable review
+- Phase 5: save reviewed expenses to SQLite
+- Phase 6: expense workspace with search and filters
+- Phase 7: CSV export and delete action
 
-- richer expense detail views and edits
-- better extraction quality and retry UX
-- Docker and smoother self-hosted setup
-- invoice creation in a later milestone
-- local model support through Ollama
+---
 
-The detailed phased plan lives in [`./roadmap.md`](./roadmap.md).
+## Privacy notes
+
+- uploaded files stay on the local filesystem under `backend/uploads/files/`
+- upload metadata stays under `backend/uploads/metadata/`
+- saved expenses are stored in local SQLite
+- AI extraction currently uses the OpenAI API
+- local model support is planned later
+
+---
+
+## Roadmap
+
+See [`./roadmap.md`](./roadmap.md).
+
+Planned:
+
+- edit expense
+- multi-user support
+- bank CSV import
+- mobile support
+- better OCR accuracy
+- UI improvements
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repo
+2. Create a feature branch
+3. Open a pull request
+
+Good first contribution areas:
+
+- UI improvements
+- better OCR parsing
+- new filters
+- performance improvements
+
+---
+
+## Why this exists
+
+Managing receipts is boring.
+
+This project automates the boring parts so freelancers can focus on real work.
+
+---
+
+## License
+
+No license file has been added yet.
