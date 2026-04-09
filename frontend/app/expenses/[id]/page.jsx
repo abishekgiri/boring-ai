@@ -197,6 +197,38 @@ function FieldOriginHint({ provenance, changedSinceExtraction = false }) {
   );
 }
 
+function formatAuditValue(fieldName, value) {
+  if (value === null || value === undefined || value === "") {
+    return "Not captured";
+  }
+
+  if (fieldName === "amount") {
+    return formatCurrency(value);
+  }
+
+  if (fieldName === "date") {
+    return formatDate(value);
+  }
+
+  return String(value);
+}
+
+function AuditStatusBadge({ changed }) {
+  if (changed) {
+    return (
+      <span className="inline-flex rounded-full border border-amber-900/10 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-900">
+        Corrected
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex rounded-full border border-emerald-900/10 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-900">
+      Kept
+    </span>
+  );
+}
+
 export default function ExpenseDetailPage() {
   const params = useParams();
   const expenseId = params?.id;
@@ -362,6 +394,46 @@ export default function ExpenseDetailPage() {
     }),
     [expense, extractedSnapshot, extractionProvenance]
   );
+  const auditTrailRows = useMemo(() => {
+    if (!expense) {
+      return [];
+    }
+
+    return [
+      {
+        key: "vendor",
+        label: "Vendor",
+        extractedValue: extractedSnapshot?.vendor,
+        savedValue: expense.vendor,
+        changed: originHints.vendor.changedSinceExtraction,
+        provenanceLabel: originHints.vendor.provenance?.label ?? null,
+      },
+      {
+        key: "amount",
+        label: "Amount",
+        extractedValue: extractedSnapshot?.amount,
+        savedValue: expense.amount,
+        changed: originHints.amount.changedSinceExtraction,
+        provenanceLabel: originHints.amount.provenance?.label ?? null,
+      },
+      {
+        key: "date",
+        label: "Date",
+        extractedValue: extractedSnapshot?.date,
+        savedValue: expense.date,
+        changed: originHints.date.changedSinceExtraction,
+        provenanceLabel: originHints.date.provenance?.label ?? null,
+      },
+      {
+        key: "category",
+        label: "Category",
+        extractedValue: extractedSnapshot?.category,
+        savedValue: expense.category,
+        changed: originHints.category.changedSinceExtraction,
+        provenanceLabel: originHints.category.provenance?.label ?? null,
+      },
+    ];
+  }, [expense, extractedSnapshot, originHints]);
 
   const hasChanges = Boolean(
     expense &&
@@ -670,6 +742,78 @@ export default function ExpenseDetailPage() {
                 </div>
               </div>
             ) : null}
+
+            <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/70 p-5">
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                  Audit trail
+                </p>
+                <h3 className="mt-3 font-serif text-2xl tracking-tight text-stone-950">
+                  Original extraction vs saved record
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-stone-600">
+                  Compare the first extracted draft with the current saved values
+                  so corrections stay easy to understand later.
+                </p>
+              </div>
+
+              {extractedSnapshot ? (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-[1.25rem] border border-stone-900/10">
+                    <thead className="bg-stone-950 text-left text-stone-50">
+                      <tr>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          Field
+                        </th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          Original extraction
+                        </th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          Saved value
+                        </th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                      {auditTrailRows.map((row) => (
+                        <tr
+                          className="border-t border-stone-900/8 align-top"
+                          key={row.key}
+                        >
+                          <td className="px-4 py-4">
+                            <p className="text-sm font-semibold text-stone-950">
+                              {row.label}
+                            </p>
+                            {row.provenanceLabel ? (
+                              <p className="mt-1 text-xs leading-5 text-stone-500">
+                                Source: {row.provenanceLabel}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-4 text-sm text-stone-700">
+                            {formatAuditValue(row.key, row.extractedValue)}
+                          </td>
+                          <td className="px-4 py-4 text-sm font-medium text-stone-900">
+                            {formatAuditValue(row.key, row.savedValue)}
+                          </td>
+                          <td className="px-4 py-4">
+                            <AuditStatusBadge changed={row.changed} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-[1.25rem] border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-6 text-sm leading-7 text-stone-600">
+                  Original extracted fields are not available for this expense,
+                  so the audit trail cannot compare the first draft with the saved
+                  record.
+                </div>
+              )}
+            </div>
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-stone-900/10 bg-stone-50/80 px-4 py-3">
