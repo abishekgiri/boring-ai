@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useState } from "react";
 
 const apiBaseUrl =
@@ -83,6 +84,7 @@ function LoadingRows() {
 }
 
 export default function ExpensesPage() {
+  const router = useRouter();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
@@ -196,20 +198,25 @@ export default function ExpensesPage() {
     }
   }
 
+  function openExpenseDetail(expenseId) {
+    router.push(`/expenses/${expenseId}`);
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.18),_transparent_28%),linear-gradient(180deg,_#fff8ef_0%,_#f5ead9_50%,_#eadbc4_100%)] px-4 py-6 text-stone-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col rounded-[2rem] border border-stone-900/10 bg-white/70 p-6 shadow-[0_30px_80px_rgba(120,53,15,0.12)] backdrop-blur md:p-10">
         <header className="mb-8 flex flex-col gap-5 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 7 in progress
+              Phase 8 complete
             </p>
             <h1 className="font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               Expense workspace
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
-              Export the current workspace to CSV, hand it off to an
-              accountant, and remove bad records without leaving the app.
+              Browse saved expenses, jump into a detail record, fix mistakes,
+              and keep the receipt plus OCR trail visible whenever you need to
+              trust the data.
             </p>
           </div>
 
@@ -231,14 +238,14 @@ export default function ExpensesPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-                Filters + export
+                Filters + actions
               </p>
               <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-                Export what you are looking at
+                Find the record you want to inspect
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
-                Search vendors, narrow the list by category or receipt date,
-                then export the exact filtered set when you are ready.
+                Search vendors, narrow by category or receipt date, then open a
+                saved expense to review, edit, export, or remove it.
               </p>
             </div>
 
@@ -420,8 +427,16 @@ export default function ExpensesPage() {
                   ) : (
                     items.map((expense) => (
                       <tr
-                        className="border-t border-stone-900/8 align-top transition hover:bg-amber-50/40"
+                        className="cursor-pointer border-t border-stone-900/8 align-top transition hover:bg-amber-50/40 focus-within:bg-amber-50/40"
                         key={expense.id}
+                        onClick={() => openExpenseDetail(expense.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openExpenseDetail(expense.id);
+                          }
+                        }}
+                        tabIndex={0}
                       >
                         <td className="px-4 py-4">
                           <p className="text-sm font-semibold text-stone-950">
@@ -443,16 +458,28 @@ export default function ExpensesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <button
-                            className="inline-flex min-h-10 items-center justify-center rounded-full border border-rose-900/10 bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-400"
-                            disabled={isDeletingExpenseId === expense.id}
-                            onClick={() => handleDeleteExpense(expense)}
-                            type="button"
-                          >
-                            {isDeletingExpenseId === expense.id
-                              ? "Deleting..."
-                              : "Delete"}
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              className="inline-flex min-h-10 items-center justify-center rounded-full border border-stone-900/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-900 transition hover:bg-stone-100"
+                              href={`/expenses/${expense.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              Open
+                            </Link>
+                            <button
+                              className="inline-flex min-h-10 items-center justify-center rounded-full border border-rose-900/10 bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-400"
+                              disabled={isDeletingExpenseId === expense.id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteExpense(expense);
+                              }}
+                              type="button"
+                            >
+                              {isDeletingExpenseId === expense.id
+                                ? "Deleting..."
+                                : "Delete"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

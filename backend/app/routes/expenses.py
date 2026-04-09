@@ -14,8 +14,14 @@ from app.db.database import (
     get_expense_by_id,
     insert_expense,
     list_expenses,
+    update_expense_by_id,
 )
-from app.schemas.expenses import ExpenseCreate, ExpenseListResponse, ExpenseRecord
+from app.schemas.expenses import (
+    ExpenseCreate,
+    ExpenseListResponse,
+    ExpenseRecord,
+    ExpenseUpdate,
+)
 from app.schemas.uploads import ExpenseCategory
 from app.services.file_storage import get_upload_metadata
 
@@ -127,6 +133,11 @@ def export_expenses(
 def delete_expense(expense_id: int) -> Response:
     delete_expense_by_id(expense_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{expense_id}", response_model=ExpenseRecord)
+def update_expense(expense_id: int, payload: ExpenseUpdate) -> ExpenseRecord:
+    return update_expense_by_id(expense_id, payload)
 
 
 @router.get("/{expense_id}", response_model=ExpenseRecord)

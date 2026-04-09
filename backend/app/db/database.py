@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.db.models import CREATE_EXPENSES_TABLE_SQL
-from app.schemas.expenses import ExpenseCreate, ExpenseRecord
+from app.schemas.expenses import ExpenseCreate, ExpenseRecord, ExpenseUpdate
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -110,6 +110,37 @@ def get_expense_by_id(expense_id: int) -> ExpenseRecord:
         )
 
     return _row_to_expense(row)
+
+
+def update_expense_by_id(expense_id: int, payload: ExpenseUpdate) -> ExpenseRecord:
+    with closing(_get_connection()) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE expenses
+            SET
+                vendor = ?,
+                amount = ?,
+                expense_date = ?,
+                category = ?
+            WHERE id = ?
+            """,
+            (
+                payload.vendor,
+                payload.amount,
+                payload.date.isoformat(),
+                payload.category,
+                expense_id,
+            ),
+        )
+        connection.commit()
+
+    if cursor.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Expense not found.",
+        )
+
+    return get_expense_by_id(expense_id)
 
 
 def list_expenses(
