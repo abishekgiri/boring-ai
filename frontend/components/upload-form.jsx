@@ -100,6 +100,24 @@ function mapExtractedFields(fields) {
   };
 }
 
+function buildLearningContext(snapshot, currentFields) {
+  const observedVendor = snapshot?.vendor?.trim() || null;
+  const observedCategory = snapshot?.category || null;
+  const hasVendorChange =
+    Boolean(observedVendor) && observedVendor !== currentFields.vendor.trim();
+  const hasCategoryChange =
+    Boolean(observedCategory) && observedCategory !== currentFields.category;
+
+  if (!hasVendorChange && !hasCategoryChange) {
+    return null;
+  }
+
+  return {
+    observed_vendor: observedVendor,
+    observed_category: observedCategory,
+  };
+}
+
 function formatFileSize(size) {
   if (size < 1024) {
     return `${size} B`;
@@ -1497,6 +1515,10 @@ export default function UploadForm({ apiBaseUrl }) {
           amount: Number(extractedFields.amount),
           date: extractedFields.date,
           category: extractedFields.category,
+          learning_context: buildLearningContext(
+            lastExtractedSnapshot,
+            extractedFields
+          ),
         }),
       });
 

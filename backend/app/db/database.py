@@ -4,12 +4,12 @@ import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
-from app.db.models import CREATE_EXPENSES_TABLE_SQL
+from app.db.models import CREATE_EXPENSES_TABLE_SQL, CREATE_VENDOR_HINTS_TABLE_SQL
 from app.schemas.expenses import ExpenseCreate, ExpenseRecord, ExpenseUpdate
 
 
@@ -36,11 +36,115 @@ def _row_to_expense(row: sqlite3.Row) -> ExpenseRecord:
 def initialize_database() -> None:
     with closing(_get_connection()) as connection:
         connection.execute(CREATE_EXPENSES_TABLE_SQL)
+        connection.execute(CREATE_VENDOR_HINTS_TABLE_SQL)
         connection.commit()
 
 
 def _normalize_vendor_for_match(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _record_vendor_learning_hint(
+    *,
+    observed_vendor: str,
+    preferred_vendor: str,
+    preferred_category: Optional[str],
+) -> None:
+    vendor_key = _normalize_vendor_for_match(observed_vendor)
+    if not vendor_key or not preferred_vendor.strip():
+        return
+
+    with closing(_get_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO vendor_learning_hints (
+                vendor_key,
+                preferred_vendor,
+                preferred_category,
+                usage_count,
+                updated_at
+            ) VALUES (?, ?, ?, 1, ?)
+            ON CONFLICT(vendor_key) DO UPDATE SET
+                preferred_vendor = excluded.preferred_vendor,
+                preferred_category = COALESCE(excluded.preferred_category, vendor_learning_hints.preferred_category),
+                usage_count = vendor_learning_hints.usage_count + 1,
+                updated_at = excluded.updated_at
+            """,
+            (
+                vendor_key,
+                preferred_vendor.strip(),
+                preferred_category,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        connection.commit()
+
+
+def get_vendor_learning_hint(vendor: str) -> Optional[Dict[str, object]]:
+    vendor_key = _normalize_vendor_for_match(vendor)
+    if not vendor_key:
+        return None
+
+    with closing(_get_connection()) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                vendor_key,
+                preferred_vendor,
+                preferred_category,
+                usage_count,
+                updated_at
+            FROM vendor_learning_hints
+            WHERE vendor_key = ?
+            """,
+            (vendor_key,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "vendor_key": row["vendor_key"],
+        "preferred_vendor": row["preferred_vendor"],
+        "preferred_category": row["preferred_category"],
+        "usage_count": row["usage_count"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def record_learning_hint(
+    *,
+    observed_vendor: Optional[str],
+    observed_category: Optional[str],
+    final_vendor: str,
+    final_category: str,
+) -> None:
+    normalized_observed_vendor = (observed_vendor or "").strip()
+    normalized_final_vendor = final_vendor.strip()
+    normalized_observed_category = (observed_category or "").strip().lower() or None
+    normalized_final_category = final_category.strip().lower()
+
+    should_record = False
+    if normalized_observed_vendor and normalized_observed_vendor != normalized_final_vendor:
+        should_record = True
+    if normalized_observed_category and normalized_observed_category != normalized_final_category:
+        should_record = True
+
+    if not should_record:
+        return
+
+    if normalized_observed_vendor:
+        _record_vendor_learning_hint(
+            observed_vendor=normalized_observed_vendor,
+            preferred_vendor=normalized_final_vendor,
+            preferred_category=normalized_final_category,
+        )
+
+    _record_vendor_learning_hint(
+        observed_vendor=normalized_final_vendor,
+        preferred_vendor=normalized_final_vendor,
+        preferred_category=normalized_final_category,
+    )
 
 
 def _vendors_look_similar(first: str, second: str) -> bool:

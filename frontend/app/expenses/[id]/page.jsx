@@ -119,6 +119,29 @@ function validateExpenseForm(formState) {
   return null;
 }
 
+function buildLearningContext(expense, formState) {
+  if (!expense) {
+    return null;
+  }
+
+  const observedVendor = expense.vendor?.trim() || null;
+  const observedCategory = expense.category || null;
+  const nextVendor = formState.vendor.trim();
+  const nextCategory = formState.category;
+  const hasVendorChange = Boolean(observedVendor) && observedVendor !== nextVendor;
+  const hasCategoryChange =
+    Boolean(observedCategory) && observedCategory !== nextCategory;
+
+  if (!hasVendorChange && !hasCategoryChange) {
+    return null;
+  }
+
+  return {
+    observed_vendor: observedVendor,
+    observed_category: observedCategory,
+  };
+}
+
 export default function ExpenseDetailPage() {
   const params = useParams();
   const expenseId = params?.id;
@@ -298,6 +321,7 @@ export default function ExpenseDetailPage() {
           amount: Number(formState.amount),
           date: formState.date,
           category: formState.category,
+          learning_context: buildLearningContext(expense, formState),
         }),
       });
 

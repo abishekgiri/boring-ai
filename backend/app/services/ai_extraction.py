@@ -9,6 +9,7 @@ from urllib import error, request
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+from app.db.database import get_vendor_learning_hint
 from app.schemas.uploads import ExtractedExpenseFields
 
 
@@ -846,6 +847,33 @@ def _has_heuristic_signal(extracted_fields: ExtractedExpenseFields) -> bool:
     return any(value is not None and value != "" for value in extracted_fields.model_dump().values())
 
 
+def _apply_vendor_learning_hint(
+    extracted_fields: ExtractedExpenseFields,
+) -> ExtractedExpenseFields:
+    if not extracted_fields.vendor:
+        return extracted_fields
+
+    hint = get_vendor_learning_hint(extracted_fields.vendor)
+    if not hint:
+        return extracted_fields
+
+    preferred_vendor = hint.get("preferred_vendor")
+    preferred_category = hint.get("preferred_category")
+
+    return ExtractedExpenseFields.model_validate(
+        {
+            "vendor": preferred_vendor or extracted_fields.vendor,
+            "amount": extracted_fields.amount,
+            "date": extracted_fields.date.isoformat() if extracted_fields.date else None,
+            "category": (
+                preferred_category
+                if preferred_category and (not extracted_fields.category or extracted_fields.category == "other")
+                else extracted_fields.category
+            ),
+        }
+    )
+
+
 def _merge_hybrid_extraction(
     extracted_fields: ExtractedExpenseFields,
     heuristic_candidates: HeuristicExtractionCandidates,
@@ -914,7 +942,7 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
 
     if not settings.openai_api_key:
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -949,7 +977,7 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
             detail = error_body or "OpenAI request failed."
 
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -957,7 +985,7 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         ) from exc
     except error.URLError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -968,14 +996,14 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         response_text = _extract_output_text(response_payload)
     except HTTPException as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
         raise exc
 
     try:
         parsed_output = json.loads(response_text)
     except json.JSONDecodeError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -986,11 +1014,13 @@ def extract_expense_fields(ocr_text: str) -> ExtractedExpenseFields:
         extracted_fields = ExtractedExpenseFields.validate_llm_output(parsed_output)
     except ValueError as exc:
         if _has_heuristic_signal(heuristic_fields):
-            return heuristic_fields
+            return _apply_vendor_learning_hint(heuristic_fields)
 
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
 
-    return _merge_hybrid_extraction(extracted_fields, heuristic_candidates, ocr_text)
+    return _apply_vendor_learning_hint(
+        _merge_hybrid_extraction(extracted_fields, heuristic_candidates, ocr_text)
+    )
