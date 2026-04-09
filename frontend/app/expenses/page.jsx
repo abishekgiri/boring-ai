@@ -33,7 +33,7 @@ function formatDate(date) {
   });
 }
 
-function buildExpensesUrl(search, category, dateFrom, dateTo) {
+function buildExpensesUrl(endpoint, search, category, dateFrom, dateTo) {
   const params = new URLSearchParams();
 
   if (search) {
@@ -53,7 +53,8 @@ function buildExpensesUrl(search, category, dateFrom, dateTo) {
   }
 
   const queryString = params.toString();
-  const basePath = `${apiBaseUrl}/api/expenses`;
+  const normalizedEndpoint = endpoint ? `/${endpoint}` : "";
+  const basePath = `${apiBaseUrl}/api/expenses${normalizedEndpoint}`;
   return queryString
     ? `${basePath}?${queryString}`
     : basePath;
@@ -99,6 +100,14 @@ export default function ExpensesPage() {
   const hasActiveFilters = Boolean(
     deferredSearch || category || dateFrom || dateTo
   );
+  const canExport = !isLoading && total > 0;
+  const exportUrl = buildExpensesUrl(
+    "export",
+    deferredSearch,
+    category,
+    dateFrom,
+    dateTo
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,7 +118,7 @@ export default function ExpensesPage() {
 
       try {
         const response = await fetch(
-          buildExpensesUrl(deferredSearch, category, dateFrom, dateTo),
+          buildExpensesUrl("", deferredSearch, category, dateFrom, dateTo),
           {
             signal: controller.signal,
           }
@@ -193,14 +202,14 @@ export default function ExpensesPage() {
         <header className="mb-8 flex flex-col gap-5 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 6 workspace + actions
+              Phase 7 in progress
             </p>
             <h1 className="font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               Expense workspace
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
-              Browse saved expenses, search vendors, filter by category or date,
-              and remove bad records without leaving the workspace.
+              Export the current workspace to CSV, hand it off to an
+              accountant, and remove bad records without leaving the app.
             </p>
           </div>
 
@@ -222,32 +231,46 @@ export default function ExpensesPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-                Filters
+                Filters + export
               </p>
               <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-                Search the workspace
+                Export what you are looking at
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
-                Search vendors and narrow the list by category or receipt date.
+                Search vendors, narrow the list by category or receipt date,
+                then export the exact filtered set when you are ready.
               </p>
             </div>
 
-            {hasActiveFilters ? (
+            <div className="flex flex-col gap-3 sm:flex-row">
               <button
-                className="inline-flex min-h-11 items-center justify-center rounded-full border border-stone-900/10 bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 transition hover:bg-stone-800"
+                className="inline-flex min-h-11 items-center justify-center rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                disabled={!canExport}
                 onClick={() => {
-                  setSearch("");
-                  setCategory("");
-                  setDateFrom("");
-                  setDateTo("");
-                  setDeleteErrorMessage("");
-                  setDeleteSuccessMessage("");
+                  window.location.href = exportUrl;
                 }}
                 type="button"
               >
-                Clear filters
+                Export CSV
               </button>
-            ) : null}
+
+              {hasActiveFilters ? (
+                <button
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-stone-900/10 bg-stone-950 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-50 transition hover:bg-stone-800"
+                  onClick={() => {
+                    setSearch("");
+                    setCategory("");
+                    setDateFrom("");
+                    setDateTo("");
+                    setDeleteErrorMessage("");
+                    setDeleteSuccessMessage("");
+                  }}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
