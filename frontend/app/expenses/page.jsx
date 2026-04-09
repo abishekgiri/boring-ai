@@ -34,7 +34,15 @@ function formatDate(date) {
   });
 }
 
-function buildExpensesUrl(endpoint, search, category, dateFrom, dateTo) {
+function buildExpensesUrl(
+  endpoint,
+  search,
+  category,
+  dateFrom,
+  dateTo,
+  sortBy,
+  sortDir
+) {
   const params = new URLSearchParams();
 
   if (search) {
@@ -51,6 +59,14 @@ function buildExpensesUrl(endpoint, search, category, dateFrom, dateTo) {
 
   if (dateTo) {
     params.set("date_to", dateTo);
+  }
+
+  if (sortBy) {
+    params.set("sort_by", sortBy);
+  }
+
+  if (sortDir) {
+    params.set("sort_dir", sortDir);
   }
 
   const queryString = params.toString();
@@ -96,11 +112,13 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [sortOption, setSortOption] = useState("date-desc");
   const [reloadKey, setReloadKey] = useState(0);
 
   const deferredSearch = useDeferredValue(search.trim());
+  const [sortBy, sortDir] = sortOption.split("-");
   const hasActiveFilters = Boolean(
-    deferredSearch || category || dateFrom || dateTo
+    deferredSearch || category || dateFrom || dateTo || sortOption !== "date-desc"
   );
   const canExport = !isLoading && total > 0;
   const exportUrl = buildExpensesUrl(
@@ -108,7 +126,9 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     dateFrom,
-    dateTo
+    dateTo,
+    sortBy,
+    sortDir
   );
 
   useEffect(() => {
@@ -120,7 +140,15 @@ export default function ExpensesPage() {
 
       try {
         const response = await fetch(
-          buildExpensesUrl("", deferredSearch, category, dateFrom, dateTo),
+          buildExpensesUrl(
+            "",
+            deferredSearch,
+            category,
+            dateFrom,
+            dateTo,
+            sortBy,
+            sortDir
+          ),
           {
             signal: controller.signal,
           }
@@ -159,7 +187,7 @@ export default function ExpensesPage() {
     return () => {
       controller.abort();
     };
-  }, [deferredSearch, category, dateFrom, dateTo, reloadKey]);
+  }, [deferredSearch, category, dateFrom, dateTo, reloadKey, sortBy, sortDir]);
 
   async function handleDeleteExpense(expense) {
     const confirmed = window.confirm(
@@ -244,8 +272,9 @@ export default function ExpensesPage() {
                 Find the record you want to inspect
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
-                Search vendors, narrow by category or receipt date, then open a
-                saved expense to review, edit, export, or remove it.
+                Search vendors or OCR text, narrow by category or receipt date,
+                then sort the results before you open a saved expense to review,
+                edit, export, or remove it.
               </p>
             </div>
 
@@ -269,6 +298,7 @@ export default function ExpensesPage() {
                     setCategory("");
                     setDateFrom("");
                     setDateTo("");
+                    setSortOption("date-desc");
                     setDeleteErrorMessage("");
                     setDeleteSuccessMessage("");
                   }}
@@ -280,15 +310,15 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Search vendor
+                Search vendor or OCR
               </span>
               <input
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by vendor"
+                placeholder="Search vendor or receipt text"
                 type="text"
                 value={search}
               />
@@ -334,6 +364,22 @@ export default function ExpensesPage() {
                 type="date"
                 value={dateTo}
               />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                Sort
+              </span>
+              <select
+                className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
+                onChange={(event) => setSortOption(event.target.value)}
+                value={sortOption}
+              >
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+                <option value="amount-desc">Highest amount</option>
+                <option value="amount-asc">Lowest amount</option>
+              </select>
             </label>
           </div>
         </section>

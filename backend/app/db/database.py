@@ -172,6 +172,8 @@ def list_expenses(
     category: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
 ) -> List[ExpenseRecord]:
     query_lines = [
         """
@@ -192,8 +194,12 @@ def list_expenses(
     parameters: list[object] = []
 
     if search:
-        query_lines.append("AND LOWER(vendor) LIKE ?")
-        parameters.append(f"%{search.lower()}%")
+        query_lines.append(
+            "AND (LOWER(vendor) LIKE ? OR LOWER(raw_ocr_text) LIKE ?)"
+        )
+        normalized_search = f"%{search.lower()}%"
+        parameters.append(normalized_search)
+        parameters.append(normalized_search)
 
     if category:
         query_lines.append("AND category = ?")
@@ -207,7 +213,11 @@ def list_expenses(
         query_lines.append("AND expense_date <= ?")
         parameters.append(date_to.isoformat())
 
-    query_lines.append("ORDER BY expense_date DESC, created_at DESC")
+    sort_column = "expense_date" if sort_by == "date" else "amount"
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    query_lines.append(
+        f"ORDER BY {sort_column} {direction}, created_at DESC"
+    )
     query = "\n".join(query_lines)
 
     with closing(_get_connection()) as connection:
