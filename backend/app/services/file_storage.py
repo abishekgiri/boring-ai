@@ -13,7 +13,11 @@ from app.core.config import (
     ALLOWED_UPLOAD_EXTENSIONS,
     get_settings,
 )
-from app.schemas.uploads import ExtractedExpenseFields, UploadRecord
+from app.schemas.uploads import (
+    DocumentClassification,
+    ExtractedExpenseFields,
+    UploadRecord,
+)
 
 
 def _normalize_filename(filename: Optional[str]) -> str:
@@ -112,6 +116,7 @@ async def save_upload(file: Optional[UploadFile]) -> UploadRecord:
         created_at=datetime.now(timezone.utc),
         ocr_text=None,
         extracted_fields=None,
+        document_classification=None,
     )
 
     _save_upload_metadata(record)
@@ -146,12 +151,17 @@ def get_upload_file_path(upload_id: str) -> Path:
     return get_settings().uploads_files_dir / record.stored_filename
 
 
-def update_upload_ocr_text(upload_id: str, text: str) -> UploadRecord:
+def update_upload_ocr_text(
+    upload_id: str,
+    text: str,
+    document_classification: DocumentClassification | None = None,
+) -> UploadRecord:
     record = get_upload_metadata(upload_id)
     updated_record = record.model_copy(
         update={
             "ocr_text": text,
             "extracted_fields": None,
+            "document_classification": document_classification,
         }
     )
     _save_upload_metadata(updated_record)

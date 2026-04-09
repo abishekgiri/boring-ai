@@ -31,7 +31,8 @@ def read_upload(upload_id: str) -> UploadRecord:
 
 @router.post("/{upload_id}/ocr", response_model=OcrResult)
 def extract_upload_text(upload_id: str) -> OcrResult:
-    return OcrResult(text=run_ocr(upload_id))
+    text, document_classification = run_ocr(upload_id)
+    return OcrResult(text=text, document_classification=document_classification)
 
 
 @router.post("/{upload_id}/extract", response_model=ExtractionResult)
@@ -50,4 +51,6 @@ def extract_upload_fields(upload_id: str) -> ExtractionResult:
         upload_id=updated_record.id,
         ocr_text=updated_record.ocr_text or record.ocr_text,
         extracted_fields=updated_record.extracted_fields or extracted_fields,
+        document_classification=updated_record.document_classification
+        or record.document_classification,
     )
