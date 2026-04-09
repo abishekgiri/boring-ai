@@ -164,6 +164,15 @@ export default function ExpensesPage() {
   const duplicateVisibleCount = items.filter(
     (expense) => expense.has_possible_duplicate
   ).length;
+  const warningVisibleCount = items.filter(
+    (expense) => expense.review_level === "warning"
+  ).length;
+  const cautionVisibleCount = items.filter(
+    (expense) => expense.review_level === "caution"
+  ).length;
+  const strongVisibleCount = items.filter(
+    (expense) => expense.review_level === "strong"
+  ).length;
   const reviewVisibleCount = items.filter(
     (expense) =>
       expense.review_level === "warning" || expense.review_level === "caution"
@@ -295,6 +304,38 @@ export default function ExpensesPage() {
     router.push(`/expenses/${expenseId}`);
   }
 
+  function applyWorkspacePreset(preset) {
+    setDeleteErrorMessage("");
+    setDeleteSuccessMessage("");
+
+    if (preset === "warning") {
+      setReviewStatus("warning");
+      setDuplicatesOnly(false);
+      setSortOption("review-desc");
+      return;
+    }
+
+    if (preset === "caution") {
+      setReviewStatus("caution");
+      setDuplicatesOnly(false);
+      setSortOption("review-desc");
+      return;
+    }
+
+    if (preset === "strong") {
+      setReviewStatus("strong");
+      setDuplicatesOnly(false);
+      setSortOption("review-asc");
+      return;
+    }
+
+    if (preset === "duplicates") {
+      setReviewStatus("");
+      setDuplicatesOnly(true);
+      setSortOption("date-desc");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.18),_transparent_28%),linear-gradient(180deg,_#fff8ef_0%,_#f5ead9_50%,_#eadbc4_100%)] px-4 py-6 text-stone-950 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col rounded-[2rem] border border-stone-900/10 bg-white/70 p-6 shadow-[0_30px_80px_rgba(120,53,15,0.12)] backdrop-blur md:p-10">
@@ -326,6 +367,112 @@ export default function ExpensesPage() {
             </div>
           </div>
         </header>
+
+        <section className="mb-6 rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
+                Review summary
+              </p>
+              <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
+                Triage the workspace faster
+              </h2>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
+                Use the live counts below to jump straight into low-confidence
+                records, medium-confidence follow-up, clean records, or likely
+                duplicates inside the current result set.
+              </p>
+            </div>
+
+            <p className="text-sm leading-7 text-stone-600">
+              {isLoading
+                ? "Preparing review summary..."
+                : "Counts reflect the expenses visible under your current filters."}
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "warning"
+                  ? "border-rose-300 bg-rose-50"
+                  : "border-stone-900/10 bg-white hover:bg-rose-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("warning")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">
+                Needs review
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : warningVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Lowest-confidence records. Sort these to the top and fix them first.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "caution"
+                  ? "border-amber-300 bg-amber-50"
+                  : "border-stone-900/10 bg-white hover:bg-amber-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("caution")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Review suggested
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : cautionVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Medium-confidence records that deserve a quick second look.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                reviewStatus === "strong"
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-stone-900/10 bg-white hover:bg-emerald-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("strong")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Looks strong
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : strongVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Strong records that can stay in the background while you clean up the rest.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                duplicatesOnly
+                  ? "border-fuchsia-300 bg-fuchsia-50"
+                  : "border-stone-900/10 bg-white hover:bg-fuchsia-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("duplicates")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-700">
+                Possible duplicates
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : duplicateVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Compare matching records before export or deletion.
+              </p>
+            </button>
+          </div>
+        </section>
 
         <section className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
