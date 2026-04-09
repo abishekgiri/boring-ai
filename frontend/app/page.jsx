@@ -1,11 +1,12 @@
+import Link from "next/link";
 import HealthStatus from "../components/health-status";
 import UploadForm from "../components/upload-form";
 
 const phaseChecklist = [
-  "Reviewed expense fields can be saved into SQLite",
-  "Saved expenses stay linked to the uploaded receipt and OCR text",
-  "The upload page shows save loading, success, and error states",
-  "A saved expense can be fetched back from the backend",
+  "Saved expenses can be listed in a dedicated workspace",
+  "Vendor search narrows results quickly",
+  "Category and date filters work together cleanly",
+  "The workspace handles loading and empty states well",
 ];
 
 const apiBaseUrl =
@@ -47,36 +48,45 @@ export default async function Home() {
         <header className="mb-10 flex flex-col gap-6 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 5 in progress
+              Phase 6 in progress
             </p>
             <h1 className="max-w-3xl font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               boring-ai
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
               Self-hosted AI back office for freelancers. The product is now
-              crossing the line from AI workflow into a real app: reviewed
-              receipt fields can now become permanent expense records.
+              turning saved expense records into a real workspace: browse,
+              search, and filter what you have already captured.
             </p>
           </div>
 
-          <div className="rounded-[1.5rem] border border-emerald-900/10 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-900 shadow-sm">
-            <p className="font-semibold uppercase tracking-[0.25em]">
-              V1 promise
-            </p>
-            <p className="mt-2 text-base font-medium">
-              Upload receipts -&gt; extract data -&gt; organize expenses -&gt;
-              export CSV
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="rounded-[1.5rem] border border-emerald-900/10 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-900 shadow-sm">
+              <p className="font-semibold uppercase tracking-[0.25em]">
+                V1 promise
+              </p>
+              <p className="mt-2 text-base font-medium">
+                Upload receipts -&gt; extract data -&gt; organize expenses -&gt;
+                export CSV
+              </p>
+            </div>
+
+            <Link
+              className="inline-flex min-h-11 items-center justify-center rounded-full border border-stone-900/10 bg-white px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-stone-900 transition hover:bg-stone-100"
+              href="/expenses"
+            >
+              Open expense workspace
+            </Link>
           </div>
         </header>
 
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-              Persistence checklist
+              Workspace checklist
             </p>
             <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-              What Phase 5 locks down
+              What Phase 6 locks down
             </h2>
             <ul className="mt-6 space-y-3">
               {phaseChecklist.map((item) => (
@@ -97,8 +107,8 @@ export default async function Home() {
                 Next after this
               </p>
               <p className="mt-2 text-base leading-7 text-stone-300">
-                Phase 6 will turn saved expenses into a searchable workspace
-                with filters and browsing.
+                Phase 7 will export saved expenses into accountant-friendly CSV
+                output.
               </p>
             </div>
           </div>
