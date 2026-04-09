@@ -66,6 +66,18 @@ const CATEGORY_KEYWORDS = {
   lodging: ["hotel", "motel", "inn", "suite", "hostel"],
   utilities: ["internet", "phone", "wireless", "electric", "water", "utility"],
 };
+const GENERIC_VENDOR_HINTS = [
+  "receipt",
+  "invoice",
+  "bill to",
+  "ship to",
+  "payment",
+  "terms",
+  "customer",
+  "subtotal",
+  "total",
+  "amount due",
+];
 
 function createEmptyExtractedFields() {
   return {
@@ -136,28 +148,9 @@ function validateFile(file) {
   return null;
 }
 
-function validateExpenseFields(uploadedFile, fields) {
-  if (!uploadedFile?.id) {
-    return "Upload a receipt before saving an expense.";
-  }
-
-  if (!fields.vendor.trim()) {
-    return "Vendor is required before saving.";
-  }
-
-  if (!fields.amount || Number.isNaN(Number(fields.amount)) || Number(fields.amount) <= 0) {
-    return "Amount must be greater than 0 before saving.";
-  }
-
-  if (!fields.date) {
-    return "Date is required before saving.";
-  }
-
-  if (!fields.category) {
-    return "Category is required before saving.";
-  }
-
-  return null;
+function validateExpenseFields(uploadedFile, ocrText, fields) {
+  const validation = buildFieldValidation(uploadedFile, ocrText, fields);
+  return validation.blocking[0] ?? null;
 }
 
 function buildReviewHints(fields) {
@@ -248,6 +241,159 @@ function buildDateCandidates(dateValue) {
       `${monthNumber}-${dayNumber}-${year}`,
     ])
   );
+}
+
+function extractLabeledAmount(ocrText, matcher) {
+  const lines = String(ocrText ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (!matcher.test(line)) {
+      continue;
+    }
+
+    const matches = line.match(/\d[\d,]*\.\d{2}/g);
+    if (!matches?.length) {
+      continue;
+    }
+
+    const amount = Number(matches[matches.length - 1].replace(/,/g, ""));
+    if (Number.isFinite(amount)) {
+      return amount;
+    }
+  }
+
+  return null;
+}
+
+function parseIsoDateValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function formatCurrencyValue(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return String(value ?? "");
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+}
+
+function buildFieldValidation(uploadedFile, ocrText, fields) {
+  const blocking = [];
+  const warnings = [];
+  const vendor = fields.vendor.trim();
+  const amount = Number(fields.amount);
+  const parsedDate = parseIsoDateValue(fields.date);
+  const normalizedVendor = vendor.toLowerCase();
+
+  if (!uploadedFile?.id) {
+    blocking.push("Upload a receipt before saving an expense.");
+  }
+
+  if (!vendor) {
+    blocking.push("Vendor is required before saving.");
+  } else {
+    if (vendor.length < 3) {
+      warnings.push("Vendor looks unusually short. Double-check that it is the merchant name, not an OCR fragment.");
+    }
+
+    if (GENERIC_VENDOR_HINTS.some((hint) => normalizedVendor.includes(hint))) {
+      warnings.push("Vendor looks generic or label-like. Compare it against the merchant header before saving.");
+    }
+
+    if (/@/.test(vendor) || /\d{3,}/.test(vendor)) {
+      warnings.push("Vendor contains an email address or long number sequence, which usually means OCR picked up the wrong line.");
+    }
+  }
+
+  if (!fields.amount || Number.isNaN(amount) || amount <= 0) {
+    blocking.push("Amount must be greater than 0 before saving.");
+  } else {
+    const totalFromOcr = extractLabeledAmount(
+      ocrText,
+      /(receipt total|grand total|amount due|total due|balance due|total)/i
+    );
+    const subtotalFromOcr = extractLabeledAmount(ocrText, /subtotal/i);
+    const taxFromOcr = extractLabeledAmount(ocrText, /(sales tax|tax)/i);
+
+    if (amount > 100000) {
+      warnings.push(`Amount looks unusually large at ${formatCurrencyValue(amount)}. Double-check that OCR did not over-read a number.`);
+    }
+
+    if (
+      Number.isFinite(totalFromOcr) &&
+      Math.abs(totalFromOcr - amount) > 0.01
+    ) {
+      warnings.push(
+        `Saved amount ${formatCurrencyValue(amount)} does not match the OCR total line (${formatCurrencyValue(totalFromOcr)}).`
+      );
+    }
+
+    if (
+      Number.isFinite(subtotalFromOcr) &&
+      amount + 0.01 < subtotalFromOcr
+    ) {
+      warnings.push(
+        `Saved amount ${formatCurrencyValue(amount)} is lower than the OCR subtotal (${formatCurrencyValue(subtotalFromOcr)}).`
+      );
+    }
+
+    if (
+      Number.isFinite(subtotalFromOcr) &&
+      Number.isFinite(taxFromOcr)
+    ) {
+      const expectedTotal = Number((subtotalFromOcr + taxFromOcr).toFixed(2));
+      if (Math.abs(expectedTotal - amount) > 0.05) {
+        warnings.push(
+          `OCR suggests subtotal plus tax equals ${formatCurrencyValue(expectedTotal)}, which does not match the saved amount ${formatCurrencyValue(amount)}.`
+        );
+      }
+    }
+  }
+
+  if (!fields.date) {
+    blocking.push("Date is required before saving.");
+  } else if (!parsedDate) {
+    blocking.push("Date must be a valid calendar date before saving.");
+  } else {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const maxFutureDate = new Date(today);
+    maxFutureDate.setDate(maxFutureDate.getDate() + 1);
+
+    if (parsedDate > maxFutureDate) {
+      warnings.push("Date is in the future. Double-check that the receipt date was not confused with a due date.");
+    }
+
+    if (parsedDate.getFullYear() < 2000) {
+      warnings.push("Date looks unusually old. Double-check the OCR year before saving.");
+    }
+  }
+
+  if (!fields.category) {
+    blocking.push("Category is required before saving.");
+  }
+
+  return {
+    blocking,
+    warnings,
+  };
 }
 
 function buildFieldConfidence(ocrText, fields, ocrAssessment, snapshot) {
@@ -802,6 +948,80 @@ function AssessmentPanel({ assessment, eyebrow }) {
   );
 }
 
+function ValidationPanel({ validation }) {
+  if (!validation) {
+    return null;
+  }
+
+  const hasBlocking = validation.blocking.length > 0;
+  const hasWarnings = validation.warnings.length > 0;
+
+  let containerClass =
+    "mt-6 rounded-[1.5rem] border border-emerald-900/10 bg-emerald-50/80 px-5 py-4 text-emerald-950";
+  let eyebrowClass = "text-emerald-700";
+  let title = "Validation checks passed";
+  let summary =
+    "No blocking issues were detected. The draft still deserves a human review, but the basic sanity checks look healthy.";
+
+  if (hasBlocking) {
+    containerClass =
+      "mt-6 rounded-[1.5rem] border border-rose-900/10 bg-rose-50/80 px-5 py-4 text-rose-950";
+    eyebrowClass = "text-rose-700";
+    title = "Fix these before save";
+    summary =
+      "At least one field is still invalid or incomplete, so this expense should not be saved yet.";
+  } else if (hasWarnings) {
+    containerClass =
+      "mt-6 rounded-[1.5rem] border border-amber-900/10 bg-amber-50/80 px-5 py-4 text-amber-950";
+    eyebrowClass = "text-amber-700";
+    title = "Review these checks before save";
+    summary =
+      "The draft is saveable, but one or more values look unusual enough to deserve a deliberate human check first.";
+  }
+
+  return (
+    <div className={containerClass}>
+      <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${eyebrowClass}`}>
+        Field validation
+      </p>
+      <h3 className="mt-3 font-serif text-2xl tracking-tight">{title}</h3>
+      <p className="mt-3 text-sm leading-7">{summary}</p>
+
+      {hasBlocking ? (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
+            Must fix
+          </p>
+          <ul className="mt-2 space-y-2">
+            {validation.blocking.map((item) => (
+              <li className="flex items-start gap-3 text-sm leading-6" key={item}>
+                <span className="mt-2 h-2 w-2 rounded-full bg-current opacity-80" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {hasWarnings ? (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
+            Review before save
+          </p>
+          <ul className="mt-2 space-y-2">
+            {validation.warnings.map((item) => (
+              <li className="flex items-start gap-3 text-sm leading-6" key={item}>
+                <span className="mt-2 h-2 w-2 rounded-full bg-current opacity-80" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 async function svgToPngFile(svgText, fileName) {
   const svgBlob = new Blob([svgText], {
     type: "image/svg+xml;charset=utf-8",
@@ -1153,7 +1373,11 @@ export default function UploadForm({ apiBaseUrl }) {
   }
 
   async function handleSaveExpense() {
-    const validationError = validateExpenseFields(uploadedFile, extractedFields);
+    const validationError = validateExpenseFields(
+      uploadedFile,
+      ocrText,
+      extractedFields
+    );
     if (validationError) {
       setSaveErrorMessage(validationError);
       setStatusMessage("Fix the reviewed fields before saving.");
@@ -1207,6 +1431,11 @@ export default function UploadForm({ apiBaseUrl }) {
     extractedFields,
     ocrAssessment
   );
+  const fieldValidation = buildFieldValidation(
+    uploadedFile,
+    ocrText,
+    extractedFields
+  );
   const fieldConfidence = buildFieldConfidence(
     ocrText,
     extractedFields,
@@ -1222,6 +1451,7 @@ export default function UploadForm({ apiBaseUrl }) {
     !isRunningOcr &&
     !isExtractingFields &&
     !isSavingExpense &&
+    fieldValidation.blocking.length === 0 &&
     !savedExpense;
 
   return (
@@ -1614,6 +1844,10 @@ export default function UploadForm({ apiBaseUrl }) {
               ) : null}
             </label>
           </div>
+        ) : null}
+
+        {hasExtractedFields ? (
+          <ValidationPanel validation={fieldValidation} />
         ) : null}
 
         <div className="mt-6 flex flex-col gap-4 border-t border-stone-900/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
