@@ -563,7 +563,7 @@ def _build_field_confidence(
                 "Amount had to fall back to a weaker visible number, so it should be reviewed carefully before saving.",
             )
 
-        if any(candidate.lower() in normalized_ocr for candidate in amount_candidates):
+        if any(_normalize_comparable_text(candidate) in normalized_ocr for candidate in amount_candidates):
             return _build_confidence(
                 "caution",
                 "Amount appears in the OCR text, but not on a clearly labeled total line.",
