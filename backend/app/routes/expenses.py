@@ -231,9 +231,9 @@ def _review_rank(level: Optional[ClassificationLevel]) -> int:
     return {
         "warning": 3,
         "caution": 2,
-        "strong": 1,
-        None: 0,
-    }.get(level, 0)
+        None: 1,
+        "strong": 0,
+    }.get(level, 1)
 
 
 @router.post("", response_model=ExpenseRecord, status_code=201)
