@@ -525,7 +525,7 @@ def _build_field_confidence(
             (
                 line
                 for line in non_empty_lines
-                if re.search(r"(receipt total|grand total|amount due|total due|balance due|invoice total|total)", line, re.IGNORECASE)
+                if re.search(r"\b(receipt total|grand total|amount due|total due|balance_due|invoice total|total)\b", line, re.IGNORECASE)
             ),
             None,
         )
