@@ -5,8 +5,8 @@ import UploadForm from "../components/upload-form";
 const productChecklist = [
   "Upload images or PDFs and keep the original receipt tied to each saved record",
   "Run OCR first so the raw text stays visible and auditable",
-  "Turn messy text into editable expense fields before anything is saved",
-  "Browse, export, and clean up saved expenses from one workspace",
+  "Review extracted fields before saving, then edit saved records later",
+  "Browse, export, and clean up expenses from one workspace",
 ];
 
 const firstRunSteps = [
