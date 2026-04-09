@@ -28,7 +28,7 @@ from app.schemas.expenses import (
     ExpenseRecord,
     ExpenseUpdate,
 )
-from app.schemas.uploads import ClassificationLevel, DocumentType, ExpenseCategory
+from app.schemas.uploads import ClassificationLevel, DocumentType, ExpenseCategory, UploadRecord
 from app.services.file_storage import get_upload_metadata
 
 
