@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.uploads import ExpenseCategory
+from app.schemas.uploads import DocumentType, ExpenseCategory
 
 
 class ExpenseFieldsBase(BaseModel):
@@ -129,6 +129,8 @@ class ExpenseRecord(BaseModel):
     category: ExpenseCategory
     raw_ocr_text: str
     created_at: datetime
+    document_type: Optional[DocumentType] = None
+    document_badge: Optional[str] = None
     has_possible_duplicate: bool = False
     duplicate_count: int = 0
     duplicate_expense_ids: List[int] = []

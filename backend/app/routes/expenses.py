@@ -28,7 +28,7 @@ from app.schemas.expenses import (
     ExpenseRecord,
     ExpenseUpdate,
 )
-from app.schemas.uploads import ExpenseCategory
+from app.schemas.uploads import DocumentType, ExpenseCategory
 from app.services.file_storage import get_upload_metadata
 
 
@@ -44,6 +44,7 @@ def _get_filtered_expenses(
     *,
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -77,10 +78,37 @@ def _get_filtered_expenses(
         sort_dir=sort_dir,
     )
     annotated_items = annotate_duplicate_expenses(items)
-    if duplicates_only:
-        return [item for item in annotated_items if item.has_possible_duplicate]
+    enriched_items: list[ExpenseRecord] = []
+    for item in annotated_items:
+        try:
+            upload_record = get_upload_metadata(item.upload_id)
+        except HTTPException:
+            enriched_items.append(item)
+            continue
 
-    return annotated_items
+        classification = upload_record.document_classification
+        if document_type and (
+            classification is None or classification.document_type != document_type
+        ):
+            continue
+
+        enriched_items.append(
+            item.model_copy(
+                update={
+                    "document_type": (
+                        classification.document_type if classification else None
+                    ),
+                    "document_badge": (
+                        classification.badge if classification else None
+                    ),
+                }
+            )
+        )
+
+    if duplicates_only:
+        return [item for item in enriched_items if item.has_possible_duplicate]
+
+    return enriched_items
 
 
 def _build_duplicate_match_reason(
@@ -147,6 +175,7 @@ def check_duplicate_expenses(payload: ExpenseDuplicateCheck) -> ExpenseDuplicate
 def read_expenses(
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -156,6 +185,7 @@ def read_expenses(
     items = _get_filtered_expenses(
         search=search,
         category=category,
+        document_type=document_type,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
@@ -169,6 +199,7 @@ def read_expenses(
 def export_expenses(
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -178,6 +209,7 @@ def export_expenses(
     items = _get_filtered_expenses(
         search=search,
         category=category,
+        document_type=document_type,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
