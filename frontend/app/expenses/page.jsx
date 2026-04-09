@@ -41,7 +41,8 @@ function buildExpensesUrl(
   dateFrom,
   dateTo,
   sortBy,
-  sortDir
+  sortDir,
+  duplicatesOnly
 ) {
   const params = new URLSearchParams();
 
@@ -69,6 +70,10 @@ function buildExpensesUrl(
     params.set("sort_dir", sortDir);
   }
 
+  if (duplicatesOnly) {
+    params.set("duplicates_only", "true");
+  }
+
   const queryString = params.toString();
   const normalizedEndpoint = endpoint ? `/${endpoint}` : "";
   const basePath = `${apiBaseUrl}/api/expenses${normalizedEndpoint}`;
@@ -93,6 +98,9 @@ function LoadingRows() {
         <div className="h-4 w-24 animate-pulse rounded-full bg-stone-200" />
       </td>
       <td className="px-4 py-4">
+        <div className="h-6 w-28 animate-pulse rounded-full bg-stone-200" />
+      </td>
+      <td className="px-4 py-4">
         <div className="h-9 w-20 animate-pulse rounded-full bg-stone-200" />
       </td>
     </tr>
@@ -113,13 +121,22 @@ export default function ExpensesPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortOption, setSortOption] = useState("date-desc");
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const deferredSearch = useDeferredValue(search.trim());
   const [sortBy, sortDir] = sortOption.split("-");
   const hasActiveFilters = Boolean(
-    deferredSearch || category || dateFrom || dateTo || sortOption !== "date-desc"
+    deferredSearch ||
+      category ||
+      dateFrom ||
+      dateTo ||
+      sortOption !== "date-desc" ||
+      duplicatesOnly
   );
+  const duplicateVisibleCount = items.filter(
+    (expense) => expense.has_possible_duplicate
+  ).length;
   const canExport = !isLoading && total > 0;
   const exportUrl = buildExpensesUrl(
     "export",
@@ -128,7 +145,8 @@ export default function ExpensesPage() {
     dateFrom,
     dateTo,
     sortBy,
-    sortDir
+    sortDir,
+    duplicatesOnly
   );
 
   useEffect(() => {
@@ -147,7 +165,8 @@ export default function ExpensesPage() {
             dateFrom,
             dateTo,
             sortBy,
-            sortDir
+            sortDir,
+            duplicatesOnly
           ),
           {
             signal: controller.signal,
@@ -187,7 +206,16 @@ export default function ExpensesPage() {
     return () => {
       controller.abort();
     };
-  }, [deferredSearch, category, dateFrom, dateTo, reloadKey, sortBy, sortDir]);
+  }, [
+    deferredSearch,
+    category,
+    dateFrom,
+    dateTo,
+    duplicatesOnly,
+    reloadKey,
+    sortBy,
+    sortDir,
+  ]);
 
   async function handleDeleteExpense(expense) {
     const confirmed = window.confirm(
@@ -273,8 +301,8 @@ export default function ExpensesPage() {
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
                 Search vendors or OCR text, narrow by category or receipt date,
-                then sort the results before you open a saved expense to review,
-                edit, export, or remove it.
+                then sort the results or focus on likely duplicates before you
+                open a saved expense to review, edit, export, or remove it.
               </p>
             </div>
 
@@ -298,6 +326,7 @@ export default function ExpensesPage() {
                     setCategory("");
                     setDateFrom("");
                     setDateTo("");
+                    setDuplicatesOnly(false);
                     setSortOption("date-desc");
                     setDeleteErrorMessage("");
                     setDeleteSuccessMessage("");
@@ -310,7 +339,7 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Search vendor or OCR
@@ -368,6 +397,22 @@ export default function ExpensesPage() {
 
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                Duplicate view
+              </span>
+              <select
+                className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
+                onChange={(event) =>
+                  setDuplicatesOnly(event.target.value === "duplicates")
+                }
+                value={duplicatesOnly ? "duplicates" : "all"}
+              >
+                <option value="all">All records</option>
+                <option value="duplicates">Possible duplicates only</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Sort
               </span>
               <select
@@ -401,6 +446,14 @@ export default function ExpensesPage() {
                 : `${total} expense${total === 1 ? "" : "s"} found`}
             </p>
           </div>
+
+          {!isLoading && duplicateVisibleCount > 0 ? (
+            <div className="mt-6 rounded-2xl border border-amber-900/10 bg-amber-50/80 px-4 py-3 text-sm leading-7 text-amber-950">
+              {duplicateVisibleCount} visible expense
+              {duplicateVisibleCount === 1 ? "" : "s"} {duplicateVisibleCount === 1 ? "looks" : "look"} like
+              possible duplicates. Open them to compare the receipt, OCR text, and saved fields before deleting anything.
+            </div>
+          ) : null}
 
           {errorMessage ? (
             <div className="mt-6 rounded-2xl border border-rose-900/10 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
@@ -463,6 +516,9 @@ export default function ExpensesPage() {
                       Category
                     </th>
                     <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em]">
+                      Signals
+                    </th>
+                    <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em]">
                       Actions
                     </th>
                   </tr>
@@ -502,6 +558,22 @@ export default function ExpensesPage() {
                           <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-950">
                             {expense.category}
                           </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {expense.has_possible_duplicate ? (
+                            <div className="space-y-2">
+                              <span className="inline-flex rounded-full border border-rose-900/10 bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-rose-900">
+                                Possible duplicate
+                              </span>
+                              <p className="text-xs leading-5 text-stone-500">
+                                {expense.duplicate_count} nearby match
+                                {expense.duplicate_count === 1 ? "" : "es"} in
+                                this view
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-stone-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap gap-2">

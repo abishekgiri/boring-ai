@@ -129,6 +129,9 @@ class ExpenseRecord(BaseModel):
     category: ExpenseCategory
     raw_ocr_text: str
     created_at: datetime
+    has_possible_duplicate: bool = False
+    duplicate_count: int = 0
+    duplicate_expense_ids: List[int] = []
 
 
 class ExpenseListResponse(BaseModel):

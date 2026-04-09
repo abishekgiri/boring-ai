@@ -164,6 +164,14 @@ def _vendors_look_similar(first: str, second: str) -> bool:
     if len(normalized_second) >= 5 and normalized_second in normalized_first:
         return True
 
+    tokens_first = [token for token in normalized_first.split() if len(token) >= 4]
+    tokens_second = [token for token in normalized_second.split() if len(token) >= 4]
+    if tokens_first and tokens_second:
+        set_first = set(tokens_first)
+        set_second = set(tokens_second)
+        if set_first.issubset(set_second) or set_second.issubset(set_first):
+            return True
+
     return False
 
 
@@ -330,6 +338,35 @@ def list_expenses(
         rows = connection.execute(query, parameters).fetchall()
 
     return [_row_to_expense(row) for row in rows]
+
+
+def annotate_duplicate_expenses(expenses: List[ExpenseRecord]) -> List[ExpenseRecord]:
+    duplicate_map: dict[int, set[int]] = {expense.id: set() for expense in expenses}
+
+    for index, expense in enumerate(expenses):
+        for candidate in expenses[index + 1 :]:
+            if abs(expense.amount - candidate.amount) > 0.01:
+                continue
+
+            if abs((expense.date - candidate.date).days) > 3:
+                continue
+
+            if not _vendors_look_similar(expense.vendor, candidate.vendor):
+                continue
+
+            duplicate_map[expense.id].add(candidate.id)
+            duplicate_map[candidate.id].add(expense.id)
+
+    return [
+        expense.model_copy(
+            update={
+                "has_possible_duplicate": bool(duplicate_map[expense.id]),
+                "duplicate_count": len(duplicate_map[expense.id]),
+                "duplicate_expense_ids": sorted(duplicate_map[expense.id]),
+            }
+        )
+        for expense in expenses
+    ]
 
 
 def find_duplicate_expenses(

@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.config import get_settings
 from app.db.database import (
+    annotate_duplicate_expenses,
     delete_expense_by_id,
     find_duplicate_expenses,
     get_expense_by_id,
@@ -47,6 +48,7 @@ def _get_filtered_expenses(
     date_to: Optional[date] = None,
     sort_by: str = "date",
     sort_dir: str = "desc",
+    duplicates_only: bool = False,
 ) -> list[ExpenseRecord]:
     normalized_search = search.strip().lower() if search else None
     normalized_category = category.strip().lower() if category else None
@@ -66,7 +68,7 @@ def _get_filtered_expenses(
             detail="sort_dir must be either 'asc' or 'desc'.",
         )
 
-    return list_expenses(
+    items = list_expenses(
         search=normalized_search or None,
         category=normalized_category or None,
         date_from=date_from,
@@ -74,6 +76,11 @@ def _get_filtered_expenses(
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
+    annotated_items = annotate_duplicate_expenses(items)
+    if duplicates_only:
+        return [item for item in annotated_items if item.has_possible_duplicate]
+
+    return annotated_items
 
 
 def _build_duplicate_match_reason(
@@ -144,6 +151,7 @@ def read_expenses(
     date_to: Optional[date] = None,
     sort_by: str = "date",
     sort_dir: str = "desc",
+    duplicates_only: bool = False,
 ) -> ExpenseListResponse:
     items = _get_filtered_expenses(
         search=search,
@@ -152,6 +160,7 @@ def read_expenses(
         date_to=date_to,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        duplicates_only=duplicates_only,
     )
     return ExpenseListResponse(items=items, total=len(items))
 
@@ -164,6 +173,7 @@ def export_expenses(
     date_to: Optional[date] = None,
     sort_by: str = "date",
     sort_dir: str = "desc",
+    duplicates_only: bool = False,
 ) -> Response:
     items = _get_filtered_expenses(
         search=search,
@@ -172,6 +182,7 @@ def export_expenses(
         date_to=date_to,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        duplicates_only=duplicates_only,
     )
 
     output = StringIO()
