@@ -8,28 +8,19 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.uploads import ExpenseCategory
 
 
-class ExpenseCreate(BaseModel):
-    upload_id: str
+class ExpenseFieldsBase(BaseModel):
     vendor: str
     amount: float = Field(gt=0)
     date: date
     category: ExpenseCategory
 
-    @field_validator("upload_id", "vendor", mode="before")
+    @field_validator("vendor", mode="before")
     @classmethod
-    def normalize_required_text(cls, value: object) -> object:
+    def normalize_vendor(cls, value: object) -> object:
         if not isinstance(value, str):
             return value
 
-        normalized = value.strip()
-        return normalized
-
-    @field_validator("upload_id")
-    @classmethod
-    def validate_upload_id(cls, value: str) -> str:
-        if not value:
-            raise ValueError("Upload ID is required.")
-        return value
+        return value.strip()
 
     @field_validator("vendor")
     @classmethod
@@ -46,6 +37,29 @@ class ExpenseCreate(BaseModel):
 
         normalized = value.strip().lower()
         return normalized
+
+
+class ExpenseCreate(ExpenseFieldsBase):
+    upload_id: str
+
+    @field_validator("upload_id", mode="before")
+    @classmethod
+    def normalize_upload_id(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        return value.strip()
+
+    @field_validator("upload_id")
+    @classmethod
+    def validate_upload_id(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Upload ID is required.")
+        return value
+
+
+class ExpenseUpdate(ExpenseFieldsBase):
+    pass
 
 
 class ExpenseRecord(BaseModel):
