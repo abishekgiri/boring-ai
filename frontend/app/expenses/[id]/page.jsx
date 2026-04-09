@@ -142,6 +142,61 @@ function buildLearningContext(expense, formState) {
   };
 }
 
+function normalizeFieldValueForComparison(value, fieldName) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (fieldName === "amount") {
+    const parsedAmount = Number(value);
+    return Number.isFinite(parsedAmount) ? parsedAmount.toFixed(2) : "";
+  }
+
+  return String(value).trim().toLowerCase();
+}
+
+function didSavedValueChange(savedValue, extractedValue, fieldName) {
+  return (
+    normalizeFieldValueForComparison(savedValue, fieldName) !==
+    normalizeFieldValueForComparison(extractedValue, fieldName)
+  );
+}
+
+function FieldOriginHint({ provenance, changedSinceExtraction = false }) {
+  if (!provenance?.label) {
+    if (!changedSinceExtraction) {
+      return null;
+    }
+
+    return (
+      <p className="mt-2 text-xs leading-5 text-stone-500">
+        <span className="font-semibold text-stone-700">
+          Saved value changed after extraction.
+        </span>{" "}
+        The original source hint is not available for this field.
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-2 text-xs leading-5 text-stone-500">
+      {changedSinceExtraction ? (
+        <>
+          <span className="font-semibold text-stone-700">
+            Saved value changed after extraction.
+          </span>{" "}
+          Original source: {provenance.label}. {provenance.details}
+        </>
+      ) : (
+        <>
+          <span className="font-semibold text-stone-700">Original source:</span>{" "}
+          {provenance.label}. {provenance.details}
+        </>
+      )}
+    </p>
+  );
+}
+
 export default function ExpenseDetailPage() {
   const params = useParams();
   const expenseId = params?.id;
@@ -267,6 +322,46 @@ export default function ExpenseDetailPage() {
     inferContentType(uploadRecord?.filename ?? expense?.file_path);
   const isReceiptImage = receiptContentType.startsWith("image/");
   const isReceiptPdf = receiptContentType === "application/pdf";
+  const extractionProvenance = uploadRecord?.extraction_provenance ?? null;
+  const extractedSnapshot = uploadRecord?.extracted_fields ?? null;
+
+  const originHints = useMemo(
+    () => ({
+      vendor: {
+        provenance: extractionProvenance?.vendor ?? null,
+        changedSinceExtraction: didSavedValueChange(
+          expense?.vendor,
+          extractedSnapshot?.vendor,
+          "vendor"
+        ),
+      },
+      amount: {
+        provenance: extractionProvenance?.amount ?? null,
+        changedSinceExtraction: didSavedValueChange(
+          expense?.amount,
+          extractedSnapshot?.amount,
+          "amount"
+        ),
+      },
+      date: {
+        provenance: extractionProvenance?.date ?? null,
+        changedSinceExtraction: didSavedValueChange(
+          expense?.date,
+          extractedSnapshot?.date,
+          "date"
+        ),
+      },
+      category: {
+        provenance: extractionProvenance?.category ?? null,
+        changedSinceExtraction: didSavedValueChange(
+          expense?.category,
+          extractedSnapshot?.category,
+          "category"
+        ),
+      },
+    }),
+    [expense, extractedSnapshot, extractionProvenance]
+  );
 
   const hasChanges = Boolean(
     expense &&
@@ -484,6 +579,10 @@ export default function ExpenseDetailPage() {
                   type="text"
                   value={formState.vendor}
                 />
+                <FieldOriginHint
+                  changedSinceExtraction={originHints.vendor.changedSinceExtraction}
+                  provenance={originHints.vendor.provenance}
+                />
               </label>
 
               <label className="block">
@@ -500,6 +599,10 @@ export default function ExpenseDetailPage() {
                   type="number"
                   value={formState.amount}
                 />
+                <FieldOriginHint
+                  changedSinceExtraction={originHints.amount.changedSinceExtraction}
+                  provenance={originHints.amount.provenance}
+                />
               </label>
 
               <label className="block">
@@ -514,6 +617,10 @@ export default function ExpenseDetailPage() {
                   }
                   type="date"
                   value={formState.date}
+                />
+                <FieldOriginHint
+                  changedSinceExtraction={originHints.date.changedSinceExtraction}
+                  provenance={originHints.date.provenance}
                 />
               </label>
 
@@ -536,8 +643,33 @@ export default function ExpenseDetailPage() {
                     </option>
                   ))}
                 </select>
+                <FieldOriginHint
+                  changedSinceExtraction={originHints.category.changedSinceExtraction}
+                  provenance={originHints.category.provenance}
+                />
               </label>
             </div>
+
+            {uploadRecord?.document_classification ? (
+              <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-stone-50/80 px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                  Original document check
+                </p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-base font-semibold text-stone-950">
+                      {uploadRecord.document_classification.badge}
+                    </p>
+                    <p className="mt-2 text-sm leading-7 text-stone-600">
+                      {uploadRecord.document_classification.summary}
+                    </p>
+                  </div>
+                  <span className="inline-flex rounded-full border border-stone-900/10 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-900">
+                    {uploadRecord.document_classification.document_type}
+                  </span>
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-stone-900/10 bg-stone-50/80 px-4 py-3">
