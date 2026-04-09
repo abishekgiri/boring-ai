@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -62,6 +62,37 @@ class ExpenseUpdate(ExpenseFieldsBase):
     pass
 
 
+class ExpenseDuplicateCheck(BaseModel):
+    upload_id: Optional[str] = None
+    vendor: str
+    amount: float = Field(gt=0)
+    date: date
+
+    @field_validator("upload_id", mode="before")
+    @classmethod
+    def normalize_upload_id(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("vendor", mode="before")
+    @classmethod
+    def normalize_vendor(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        return value.strip()
+
+    @field_validator("vendor")
+    @classmethod
+    def validate_vendor(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Vendor is required.")
+        return value
+
+
 class ExpenseRecord(BaseModel):
     id: int
     upload_id: str
@@ -76,4 +107,14 @@ class ExpenseRecord(BaseModel):
 
 class ExpenseListResponse(BaseModel):
     items: List[ExpenseRecord]
+    total: int
+
+
+class DuplicateExpenseRecord(ExpenseRecord):
+    match_reason: str
+    date_distance_days: int
+
+
+class ExpenseDuplicateResponse(BaseModel):
+    items: List[DuplicateExpenseRecord]
     total: int
