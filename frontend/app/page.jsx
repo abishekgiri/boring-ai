@@ -3,10 +3,10 @@ import HealthStatus from "../components/health-status";
 import UploadForm from "../components/upload-form";
 
 const phaseChecklist = [
-  "Saved expenses can be listed in a dedicated workspace",
-  "Vendor search narrows results quickly",
-  "Category and date filters work together cleanly",
-  "The workspace handles loading and empty states well",
+  "The workspace can export filtered expenses as clean CSV",
+  "Export respects vendor, category, and date filters",
+  "Bad records can be removed from the workspace",
+  "The workspace stays useful for real bookkeeping handoff",
 ];
 
 const apiBaseUrl =
@@ -48,15 +48,15 @@ export default async function Home() {
         <header className="mb-10 flex flex-col gap-6 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 6 in progress
+              Phase 7 in progress
             </p>
             <h1 className="max-w-3xl font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               boring-ai
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
               Self-hosted AI back office for freelancers. The product is now
-              turning saved expense records into a real workspace: browse,
-              search, and filter what you have already captured.
+              becoming useful for actual bookkeeping handoff: export filtered
+              expenses to CSV and keep the workspace clean.
             </p>
           </div>
 
@@ -83,10 +83,10 @@ export default async function Home() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-              Workspace checklist
+              Export checklist
             </p>
             <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-              What Phase 6 locks down
+              What Phase 7 locks down
             </h2>
             <ul className="mt-6 space-y-3">
               {phaseChecklist.map((item) => (
@@ -107,8 +107,8 @@ export default async function Home() {
                 Next after this
               </p>
               <p className="mt-2 text-base leading-7 text-stone-300">
-                Phase 7 will export saved expenses into accountant-friendly CSV
-                output.
+                Phase 8 can deepen expense actions with richer detail views and
+                edits.
               </p>
             </div>
           </div>

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import csv
 from datetime import date
+from io import StringIO
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.config import get_settings
-from app.db.database import get_expense_by_id, insert_expense, list_expenses
+from app.db.database import (
+    delete_expense_by_id,
+    get_expense_by_id,
+    insert_expense,
+    list_expenses,
+)
 from app.schemas.expenses import ExpenseCreate, ExpenseListResponse, ExpenseRecord
 from app.schemas.uploads import ExpenseCategory
 from app.services.file_storage import get_upload_metadata
@@ -19,6 +26,29 @@ router = APIRouter(prefix="/api/expenses", tags=["expenses"])
 def _build_file_path(stored_filename: str) -> str:
     settings = get_settings()
     return str(Path(settings.backend_root.name) / "uploads" / "files" / stored_filename)
+
+
+def _get_filtered_expenses(
+    *,
+    search: Optional[str] = None,
+    category: Optional[ExpenseCategory] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> list[ExpenseRecord]:
+    normalized_search = search.strip().lower() if search else None
+    normalized_category = category.strip().lower() if category else None
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_from must be on or before date_to.",
+        )
+
+    return list_expenses(
+        search=normalized_search or None,
+        category=normalized_category or None,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @router.post("", response_model=ExpenseRecord, status_code=201)
@@ -44,21 +74,59 @@ def read_expenses(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> ExpenseListResponse:
-    normalized_search = search.strip().lower() if search else None
-    normalized_category = category.strip().lower() if category else None
-    if date_from and date_to and date_from > date_to:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="date_from must be on or before date_to.",
-        )
-
-    items = list_expenses(
-        search=normalized_search or None,
-        category=normalized_category or None,
+    items = _get_filtered_expenses(
+        search=search,
+        category=category,
         date_from=date_from,
         date_to=date_to,
     )
     return ExpenseListResponse(items=items, total=len(items))
+
+
+@router.get("/export")
+def export_expenses(
+    search: Optional[str] = None,
+    category: Optional[ExpenseCategory] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> Response:
+    items = _get_filtered_expenses(
+        search=search,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "vendor", "amount", "date", "category", "file_path", "created_at"])
+
+    for item in items:
+        writer.writerow(
+            [
+                item.id,
+                item.vendor,
+                item.amount,
+                item.date.isoformat(),
+                item.category,
+                item.file_path,
+                item.created_at.isoformat(),
+            ]
+        )
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="boring-ai-expenses.csv"',
+        },
+    )
+
+
+@router.delete("/{expense_id}", status_code=204)
+def delete_expense(expense_id: int) -> Response:
+    delete_expense_by_id(expense_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{expense_id}", response_model=ExpenseRecord)
