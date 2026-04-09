@@ -1,0 +1,11 @@
+{
+  "vendor": "Uber",
+  "amount": 24.5,
+  "date": "2026-04-07",
+  "category": "transport",
+  "subtotal": null,
+  "tax_amount": null,
+  "receipt_number": null,
+  "due_date": null,
+  "line_items": []
+}

@@ -1,0 +1,5 @@
+Uber
+Trip receipt
+Date 04/07/2026
+Ride from airport to home
+Total 24.50

@@ -1,0 +1,11 @@
+{
+  "vendor": "STARBUCKS COFFEE",
+  "amount": 8.75,
+  "date": "2026-04-08",
+  "category": "meals",
+  "subtotal": null,
+  "tax_amount": null,
+  "receipt_number": null,
+  "due_date": null,
+  "line_items": []
+}

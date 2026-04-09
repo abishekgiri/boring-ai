@@ -1,0 +1,5 @@
+Amazon Web Services
+Invoice # AWS-1001
+Invoice Date 04/01/2026
+Cloud hosting subscription
+Amount Due 89.99
