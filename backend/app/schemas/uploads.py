@@ -61,6 +61,25 @@ class ExtractedLineItem(BaseModel):
         return value
 
 
+class ExtractedFieldProvenance(BaseModel):
+    source: str
+    label: str
+    details: str
+
+
+class ExtractionProvenance(BaseModel):
+    vendor: Optional[ExtractedFieldProvenance] = None
+    amount: Optional[ExtractedFieldProvenance] = None
+    date: Optional[ExtractedFieldProvenance] = None
+    category: Optional[ExtractedFieldProvenance] = None
+    subtotal: Optional[ExtractedFieldProvenance] = None
+    tax_amount: Optional[ExtractedFieldProvenance] = None
+    receipt_number: Optional[ExtractedFieldProvenance] = None
+    due_date: Optional[ExtractedFieldProvenance] = None
+    payment_method: Optional[ExtractedFieldProvenance] = None
+    line_items: Optional[ExtractedFieldProvenance] = None
+
+
 class ExtractedExpenseFields(BaseModel):
     vendor: Optional[str]
     amount: Optional[float]
@@ -159,6 +178,7 @@ class UploadRecord(BaseModel):
     created_at: datetime
     ocr_text: Optional[str] = None
     extracted_fields: Optional[ExtractedExpenseFields] = None
+    extraction_provenance: Optional[ExtractionProvenance] = None
 
 
 class OcrResult(BaseModel):
@@ -169,3 +189,4 @@ class ExtractionResult(BaseModel):
     upload_id: str
     ocr_text: str
     extracted_fields: ExtractedExpenseFields
+    extraction_provenance: Optional[ExtractionProvenance] = None
