@@ -25,8 +25,11 @@ const DOCUMENT_TYPE_OPTIONS = [
   { value: "unknown", label: "Unknown" },
 ];
 const REVIEW_FILTER_OPTIONS = [
-  { value: "all", label: "All records" },
-  { value: "review", label: "Needs review only" },
+  { value: "", label: "All records" },
+  { value: "needs_review", label: "Needs review" },
+  { value: "warning", label: "Low confidence" },
+  { value: "caution", label: "Medium confidence" },
+  { value: "strong", label: "Looks strong" },
 ];
 
 function formatCurrency(amount) {
@@ -49,7 +52,7 @@ function buildExpensesUrl(
   search,
   category,
   documentType,
-  reviewOnly,
+  reviewStatus,
   dateFrom,
   dateTo,
   sortBy,
@@ -70,8 +73,8 @@ function buildExpensesUrl(
     params.set("document_type", documentType);
   }
 
-  if (reviewOnly) {
-    params.set("review_only", "true");
+  if (reviewStatus) {
+    params.set("review_status", reviewStatus);
   }
 
   if (dateFrom) {
@@ -139,7 +142,7 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [documentType, setDocumentType] = useState("");
-  const [reviewOnly, setReviewOnly] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortOption, setSortOption] = useState("date-desc");
@@ -152,7 +155,7 @@ export default function ExpensesPage() {
     deferredSearch ||
       category ||
       documentType ||
-      reviewOnly ||
+      reviewStatus ||
       dateFrom ||
       dateTo ||
       sortOption !== "date-desc" ||
@@ -171,7 +174,7 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     documentType,
-    reviewOnly,
+    reviewStatus,
     dateFrom,
     dateTo,
     sortBy,
@@ -193,7 +196,7 @@ export default function ExpensesPage() {
             deferredSearch,
             category,
             documentType,
-            reviewOnly,
+            reviewStatus,
             dateFrom,
             dateTo,
             sortBy,
@@ -242,7 +245,7 @@ export default function ExpensesPage() {
     deferredSearch,
     category,
     documentType,
-    reviewOnly,
+    reviewStatus,
     dateFrom,
     dateTo,
     duplicatesOnly,
@@ -359,7 +362,7 @@ export default function ExpensesPage() {
                     setSearch("");
                     setCategory("");
                     setDocumentType("");
-                    setReviewOnly(false);
+                    setReviewStatus("");
                     setDateFrom("");
                     setDateTo("");
                     setDuplicatesOnly(false);
@@ -450,12 +453,12 @@ export default function ExpensesPage() {
 
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                Review queue
+                Review status
               </span>
               <select
                 className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200"
-                onChange={(event) => setReviewOnly(event.target.value === "review")}
-                value={reviewOnly ? "review" : "all"}
+                onChange={(event) => setReviewStatus(event.target.value)}
+                value={reviewStatus}
               >
                 {REVIEW_FILTER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -492,6 +495,8 @@ export default function ExpensesPage() {
               >
                 <option value="date-desc">Newest first</option>
                 <option value="date-asc">Oldest first</option>
+                <option value="review-desc">Needs review first</option>
+                <option value="review-asc">Strongest first</option>
                 <option value="amount-desc">Highest amount</option>
                 <option value="amount-asc">Lowest amount</option>
               </select>
@@ -559,7 +564,7 @@ export default function ExpensesPage() {
               </h3>
               <p className="mt-3 text-sm leading-7 text-stone-600">
                 {hasActiveFilters
-                  ? "Try adjusting vendor, category, document type, review queue, or date range to widen the results."
+                  ? "Try adjusting vendor, category, document type, review status, or date range to widen the results."
                   : "Upload and save a receipt to start building your workspace."}
               </p>
               {!hasActiveFilters ? (
@@ -639,8 +644,7 @@ export default function ExpensesPage() {
                         <td className="px-4 py-4">
                           {expense.has_possible_duplicate ||
                           expense.document_type ||
-                          (expense.review_badge &&
-                            expense.review_level !== "strong") ? (
+                          expense.review_badge ? (
                             <div className="space-y-2">
                               {expense.document_type ? (
                                 <div>
@@ -654,14 +658,15 @@ export default function ExpensesPage() {
                                   ) : null}
                                 </div>
                               ) : null}
-                              {expense.review_badge &&
-                              expense.review_level !== "strong" ? (
+                              {expense.review_badge ? (
                                 <div>
                                   <span
                                     className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
                                       expense.review_level === "warning"
                                         ? "border-rose-900/10 bg-rose-50 text-rose-900"
-                                        : "border-amber-900/10 bg-amber-50 text-amber-900"
+                                        : expense.review_level === "caution"
+                                          ? "border-amber-900/10 bg-amber-50 text-amber-900"
+                                          : "border-emerald-900/10 bg-emerald-50 text-emerald-900"
                                     }`}
                                   >
                                     {expense.review_badge}

@@ -46,6 +46,7 @@ def _get_filtered_expenses(
     category: Optional[ExpenseCategory] = None,
     document_type: Optional[DocumentType] = None,
     review_only: bool = False,
+    review_status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -59,15 +60,20 @@ def _get_filtered_expenses(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="date_from must be on or before date_to.",
         )
-    if sort_by not in {"date", "amount"}:
+    if sort_by not in {"date", "amount", "review"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="sort_by must be either 'date' or 'amount'.",
+            detail="sort_by must be 'date', 'amount', or 'review'.",
         )
     if sort_dir not in {"asc", "desc"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="sort_dir must be either 'asc' or 'desc'.",
+        )
+    if review_status not in {None, "", "needs_review", "warning", "caution", "strong"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="review_status must be one of 'needs_review', 'warning', 'caution', or 'strong'.",
         )
 
     items = list_expenses(
@@ -75,7 +81,7 @@ def _get_filtered_expenses(
         category=normalized_category or None,
         date_from=date_from,
         date_to=date_to,
-        sort_by=sort_by,
+        sort_by="date" if sort_by == "review" else sort_by,
         sort_dir=sort_dir,
     )
     annotated_items = annotate_duplicate_expenses(items)
@@ -96,6 +102,10 @@ def _get_filtered_expenses(
         review_level, review_badge, review_reason = _build_review_signal(upload_record)
         if review_only and review_level not in {"warning", "caution"}:
             continue
+        if review_status == "needs_review" and review_level not in {"warning", "caution"}:
+            continue
+        if review_status in {"warning", "caution", "strong"} and review_level != review_status:
+            continue
 
         enriched_items.append(
             item.model_copy(
@@ -114,7 +124,19 @@ def _get_filtered_expenses(
         )
 
     if duplicates_only:
-        return [item for item in enriched_items if item.has_possible_duplicate]
+        enriched_items = [item for item in enriched_items if item.has_possible_duplicate]
+
+    if sort_by == "review":
+        reverse = sort_dir == "desc"
+        enriched_items = sorted(
+            enriched_items,
+            key=lambda item: (
+                _review_rank(item.review_level),
+                item.date.toordinal(),
+                item.created_at.timestamp(),
+            ),
+            reverse=reverse,
+        )
 
     return enriched_items
 
@@ -205,6 +227,15 @@ def _build_review_signal(upload_record) -> tuple[
     return None, None, None
 
 
+def _review_rank(level: Optional[ClassificationLevel]) -> int:
+    return {
+        "warning": 3,
+        "caution": 2,
+        "strong": 1,
+        None: 0,
+    }.get(level, 0)
+
+
 @router.post("", response_model=ExpenseRecord, status_code=201)
 def create_expense(payload: ExpenseCreate) -> ExpenseRecord:
     upload_record = get_upload_metadata(payload.upload_id)
@@ -258,6 +289,7 @@ def read_expenses(
     category: Optional[ExpenseCategory] = None,
     document_type: Optional[DocumentType] = None,
     review_only: bool = False,
+    review_status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -269,6 +301,7 @@ def read_expenses(
         category=category,
         document_type=document_type,
         review_only=review_only,
+        review_status=review_status,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
@@ -284,6 +317,7 @@ def export_expenses(
     category: Optional[ExpenseCategory] = None,
     document_type: Optional[DocumentType] = None,
     review_only: bool = False,
+    review_status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -295,6 +329,7 @@ def export_expenses(
         category=category,
         document_type=document_type,
         review_only=review_only,
+        review_status=review_status,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
