@@ -1,0 +1,14 @@
+[
+  {
+    "name": "east-repair-clean-ocr",
+    "input_path": "examples/east-repair-clean-ocr.txt",
+    "expected_path": "examples/east-repair-expected.json",
+    "description": "Clean OCR text should recover the merchant, final total, date, and category."
+  },
+  {
+    "name": "east-repair-messy-ocr",
+    "input_path": "examples/east-repair-messy-ocr.txt",
+    "expected_path": "examples/east-repair-messy-expected.json",
+    "description": "Messy OCR should still recover a safe draft without inventing an unreliable date."
+  }
+]
