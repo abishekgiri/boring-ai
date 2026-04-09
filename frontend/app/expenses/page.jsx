@@ -164,6 +164,15 @@ export default function ExpensesPage() {
   const duplicateVisibleCount = items.filter(
     (expense) => expense.has_possible_duplicate
   ).length;
+  const receiptVisibleCount = items.filter(
+    (expense) => expense.document_type === "receipt"
+  ).length;
+  const invoiceVisibleCount = items.filter(
+    (expense) => expense.document_type === "invoice"
+  ).length;
+  const unknownVisibleCount = items.filter(
+    (expense) => expense.document_type === "unknown"
+  ).length;
   const warningVisibleCount = items.filter(
     (expense) => expense.review_level === "warning"
   ).length;
@@ -337,7 +346,29 @@ export default function ExpensesPage() {
     }
 
     if (preset === "all") {
+      setDocumentType("");
       setReviewStatus("");
+      setDuplicatesOnly(false);
+      setSortOption("date-desc");
+      return;
+    }
+
+    if (preset === "receipt") {
+      setDocumentType("receipt");
+      setDuplicatesOnly(false);
+      setSortOption("date-desc");
+      return;
+    }
+
+    if (preset === "invoice") {
+      setDocumentType("invoice");
+      setDuplicatesOnly(false);
+      setSortOption("date-desc");
+      return;
+    }
+
+    if (preset === "unknown") {
+      setDocumentType("unknown");
       setDuplicatesOnly(false);
       setSortOption("date-desc");
     }
@@ -386,7 +417,7 @@ export default function ExpensesPage() {
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-7 text-stone-700">
                 Use the live counts below to jump straight into low-confidence
-                records, medium-confidence follow-up, clean records, or likely
+                records, medium-confidence follow-up, document types, or likely
                 duplicates inside the current result set.
               </p>
             </div>
@@ -398,7 +429,7 @@ export default function ExpensesPage() {
             </p>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 reviewStatus === "warning"
@@ -456,6 +487,66 @@ export default function ExpensesPage() {
               </p>
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Strong records that can stay in the background while you clean up the rest.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                documentType === "receipt"
+                  ? "border-sky-300 bg-sky-50"
+                  : "border-stone-900/10 bg-white hover:bg-sky-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("receipt")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                Receipts
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : receiptVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Standard receipt records with totals and merchant details ready to inspect.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                documentType === "invoice"
+                  ? "border-violet-300 bg-violet-50"
+                  : "border-stone-900/10 bg-white hover:bg-violet-50/70"
+              }`}
+              onClick={() => applyWorkspacePreset("invoice")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
+                Invoices
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : invoiceVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Invoice-style documents that may need extra care around due dates and totals.
+              </p>
+            </button>
+
+            <button
+              className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
+                documentType === "unknown"
+                  ? "border-slate-300 bg-slate-100"
+                  : "border-stone-900/10 bg-white hover:bg-slate-100"
+              }`}
+              onClick={() => applyWorkspacePreset("unknown")}
+              type="button"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                Unknown files
+              </p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                {isLoading ? "—" : unknownVisibleCount}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                Documents that do not clearly look like a receipt or invoice and may need manual review.
               </p>
             </button>
 
