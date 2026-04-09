@@ -110,6 +110,34 @@ What works today:
 - delete action
 - Render and Vercel deployment setup
 
+## What we have built so far
+
+The repo has moved past a basic OCR demo. On `main`, `boring-ai` now includes:
+
+- local upload and receipt preview for images and PDFs
+- OCR with Tesseract and PDF support
+- hybrid receipt extraction that combines heuristics with LLM parsing
+- editable review before save, with OCR confidence and extraction confidence signals
+- field-level confidence indicators for vendor, amount, date, and category
+- field validation checks before save
+- duplicate detection warnings before saving a new expense
+- SQLite persistence for expense records
+- expense detail and edit flow for saved records
+- workspace search by vendor and OCR text
+- category and date filters
+- sort controls for date and amount
+- CSV export for filtered expense views
+- delete support for bad records
+- correction learning for vendor normalization and category hints
+- extraction evals for benchmark receipt cases
+- demo-first onboarding, sample files, README demo GIF, and open-source community files
+
+Recent advanced improvements on `main`:
+
+- Phase 11-style trust work: field-level confidence, validation, and duplicate warnings
+- Phase 12-style extraction work: hybrid extraction plus stronger total/date/tax fallbacks
+- Phase 13-style reliability work: evals, correction learning, and smarter workspace search and sorting
+
 What is intentionally not here yet:
 
 - auth
