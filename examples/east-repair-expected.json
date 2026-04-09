@@ -2,5 +2,29 @@
   "vendor": "East Repair Inc.",
   "amount": 154.06,
   "date": "2019-11-02",
-  "category": "transport"
+  "category": "transport",
+  "subtotal": 145.0,
+  "tax_amount": 9.06,
+  "receipt_number": "US-001",
+  "due_date": "2019-02-26",
+  "line_items": [
+    {
+      "description": "Front and rear brake cables",
+      "quantity": 1.0,
+      "unit_price": 100.0,
+      "line_total": 100.0
+    },
+    {
+      "description": "New set of pedal arms",
+      "quantity": 2.0,
+      "unit_price": 15.0,
+      "line_total": 30.0
+    },
+    {
+      "description": "Labor 3hrs",
+      "quantity": 3.0,
+      "unit_price": 5.0,
+      "line_total": 15.0
+    }
+  ]
 }

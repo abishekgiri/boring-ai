@@ -15,7 +15,17 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.services.ai_extraction import extract_expense_fields  # noqa: E402
 
 
-FIELDS = ("vendor", "amount", "date", "category")
+FIELDS = (
+    "vendor",
+    "amount",
+    "date",
+    "category",
+    "subtotal",
+    "tax_amount",
+    "receipt_number",
+    "due_date",
+    "line_items",
+)
 
 
 @dataclass
@@ -41,6 +51,10 @@ def load_cases() -> list[EvalCase]:
 
 
 def normalize_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: normalize_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_value(item) for item in value]
     if hasattr(value, "isoformat"):
         return value.isoformat()
     if isinstance(value, float):

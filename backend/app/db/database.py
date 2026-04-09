@@ -55,6 +55,7 @@ def _record_vendor_learning_hint(
         return
 
     with closing(_get_connection()) as connection:
+        connection.execute(CREATE_VENDOR_HINTS_TABLE_SQL)
         connection.execute(
             """
             INSERT INTO vendor_learning_hints (
@@ -86,6 +87,7 @@ def get_vendor_learning_hint(vendor: str) -> Optional[Dict[str, object]]:
         return None
 
     with closing(_get_connection()) as connection:
+        connection.execute(CREATE_VENDOR_HINTS_TABLE_SQL)
         row = connection.execute(
             """
             SELECT
