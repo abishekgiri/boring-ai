@@ -150,7 +150,7 @@ def _format_review_field_names(field_names: list[str]) -> str:
     return f"{', '.join(names[:-1])}, and {names[-1]}"
 
 
-def _build_review_signal(upload_record) -> tuple[
+def _build_review_signal(upload_record: UploadRecord) -> tuple[
     Optional[ClassificationLevel],
     Optional[str],
     Optional[str],
