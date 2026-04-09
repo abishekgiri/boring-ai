@@ -16,6 +16,7 @@ from app.core.config import (
 from app.schemas.uploads import (
     DocumentClassification,
     ExtractedExpenseFields,
+    ExtractionFieldConfidence,
     ExtractionProvenance,
     UploadRecord,
 )
@@ -119,6 +120,7 @@ async def save_upload(file: Optional[UploadFile]) -> UploadRecord:
         extracted_fields=None,
         document_classification=None,
         extraction_provenance=None,
+        field_confidence=None,
     )
 
     _save_upload_metadata(record)
@@ -165,6 +167,7 @@ def update_upload_ocr_text(
             "extracted_fields": None,
             "document_classification": document_classification,
             "extraction_provenance": None,
+            "field_confidence": None,
         }
     )
     _save_upload_metadata(updated_record)
@@ -175,12 +178,14 @@ def update_upload_extracted_fields(
     upload_id: str,
     extracted_fields: ExtractedExpenseFields,
     extraction_provenance: ExtractionProvenance | None = None,
+    field_confidence: ExtractionFieldConfidence | None = None,
 ) -> UploadRecord:
     record = get_upload_metadata(upload_id)
     updated_record = record.model_copy(
         update={
             "extracted_fields": extracted_fields,
             "extraction_provenance": extraction_provenance,
+            "field_confidence": field_confidence,
         }
     )
     _save_upload_metadata(updated_record)

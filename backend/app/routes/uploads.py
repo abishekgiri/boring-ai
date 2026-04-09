@@ -49,6 +49,7 @@ def extract_upload_fields(upload_id: str) -> ExtractionResult:
         upload_id,
         extraction_outcome.fields,
         extraction_outcome.provenance,
+        extraction_outcome.field_confidence,
     )
 
     return ExtractionResult(
@@ -59,4 +60,6 @@ def extract_upload_fields(upload_id: str) -> ExtractionResult:
         or record.document_classification,
         extraction_provenance=updated_record.extraction_provenance
         or extraction_outcome.provenance,
+        field_confidence=updated_record.field_confidence
+        or extraction_outcome.field_confidence,
     )

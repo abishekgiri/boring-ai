@@ -12,8 +12,10 @@ from app.core.config import get_settings
 from app.db.database import get_vendor_learning_hint
 from app.schemas.uploads import (
     ExtractedExpenseFields,
+    ExtractedFieldConfidence,
     ExtractedFieldProvenance,
     ExtractedLineItem,
+    ExtractionFieldConfidence,
     ExtractionProvenance,
 )
 
@@ -298,6 +300,7 @@ class HeuristicExtractionCandidates:
 class ExtractionOutcome:
     fields: ExtractedExpenseFields
     provenance: ExtractionProvenance
+    field_confidence: ExtractionFieldConfidence
 
 
 PROVENANCE_LABELS = {
@@ -327,6 +330,354 @@ PROVENANCE_LABELS = {
     "learned_vendor": ("Prior correction history", "Normalized this vendor using a matching correction from earlier saved expenses."),
     "learned_category": ("Prior correction history", "Suggested this category from earlier corrections for the same vendor."),
 }
+
+
+def _normalize_comparable_text(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _includes_comparable_text(haystack: str, needle: str) -> bool:
+    normalized_needle = _normalize_comparable_text(needle)
+    if not normalized_needle:
+        return False
+
+    return normalized_needle in _normalize_comparable_text(haystack)
+
+
+def _build_amount_display_candidates(amount_value: object) -> list[str]:
+    try:
+        parsed_amount = float(amount_value)
+    except (TypeError, ValueError):
+        return []
+
+    if parsed_amount <= 0:
+        return []
+
+    fixed = f"{parsed_amount:.2f}"
+    no_trailing_zeros = re.sub(r"\.00$", "", fixed)
+    return list(
+        dict.fromkeys(
+            (
+                fixed,
+                no_trailing_zeros,
+                f"${fixed}",
+                f"${no_trailing_zeros}",
+            )
+        )
+    )
+
+
+def _build_date_display_candidates(date_value: object) -> list[str]:
+    if not date_value:
+        return []
+
+    if hasattr(date_value, "isoformat"):
+        normalized_date = date_value.isoformat()
+    else:
+        normalized_date = str(date_value)
+
+    parts = normalized_date.split("-")
+    if len(parts) != 3:
+        return [normalized_date]
+
+    year, month, day = parts
+    month_number = str(int(month))
+    day_number = str(int(day))
+
+    return list(
+        dict.fromkeys(
+            (
+                normalized_date,
+                f"{month}/{day}/{year}",
+                f"{month_number}/{day_number}/{year}",
+                f"{month}-{day}-{year}",
+                f"{month_number}-{day_number}-{year}",
+            )
+        )
+    )
+
+
+def _build_confidence(
+    level: str,
+    reason: str,
+) -> ExtractedFieldConfidence:
+    badge = {
+        "strong": "High confidence",
+        "caution": "Medium confidence",
+        "warning": "Low confidence",
+    }.get(level, "Medium confidence")
+    return ExtractedFieldConfidence(level=level, badge=badge, reason=reason)
+
+
+def _build_ocr_confidence_level(ocr_text: str) -> str:
+    if not ocr_text:
+        return "warning"
+
+    normalized = ocr_text.lower()
+    non_empty_lines = _iter_non_empty_lines(ocr_text)
+    warnings: list[str] = []
+    score = 0
+
+    if len(non_empty_lines) >= 6 or len(ocr_text) >= 160:
+        score += 1
+    else:
+        warnings.append("short")
+
+    if re.search(r"(receipt total|total|amount due|subtotal|balance due)", normalized):
+        score += 1
+    else:
+        warnings.append("missing_total")
+
+    if re.search(r"(receipt date|invoice date|issued|date|due date)", normalized):
+        score += 1
+    else:
+        warnings.append("missing_date")
+
+    unusual_character_count = len(re.findall(r"[{}\[\]|~_^]", ocr_text))
+    if unusual_character_count >= 4:
+        warnings.append("noisy_characters")
+    elif len(non_empty_lines) >= 6:
+        score += 1
+
+    if score >= 3 and not warnings:
+        return "strong"
+
+    if score >= 2:
+        return "caution"
+
+    return "warning"
+
+
+def _maybe_downgrade_from_weak_ocr(
+    confidence: ExtractedFieldConfidence,
+    ocr_level: str,
+) -> ExtractedFieldConfidence:
+    if ocr_level != "warning" or confidence.level != "strong":
+        return confidence
+
+    return confidence.model_copy(
+        update={
+            "level": "caution",
+            "badge": "Medium confidence",
+            "reason": (
+                f"{confidence.reason} OCR quality looked weak overall, so this field should still be reviewed carefully."
+            ),
+        }
+    )
+
+
+def _build_field_confidence(
+    *,
+    ocr_text: str,
+    extracted_fields: ExtractedExpenseFields,
+    provenance: ExtractionProvenance,
+) -> ExtractionFieldConfidence:
+    non_empty_lines = _iter_non_empty_lines(ocr_text)
+    top_lines = non_empty_lines[:6]
+    normalized_ocr = _normalize_comparable_text(ocr_text)
+    ocr_level = _build_ocr_confidence_level(ocr_text)
+
+    def build_vendor_confidence() -> ExtractedFieldConfidence:
+        if not extracted_fields.vendor:
+            return _build_confidence(
+                "warning",
+                "Vendor is missing, so there is nothing trustworthy to save yet.",
+            )
+
+        if provenance.vendor and provenance.vendor.source == "learned_vendor":
+            return _build_confidence(
+                "caution",
+                "Vendor was normalized from a prior user correction, so it should still be checked against the current receipt header.",
+            )
+
+        if any(_includes_comparable_text(line, extracted_fields.vendor) for line in top_lines):
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    "Vendor matches the receipt header area, which is usually the strongest source for the merchant name.",
+                ),
+                ocr_level,
+            )
+
+        if any(
+            _includes_comparable_text(line, extracted_fields.vendor)
+            for line in non_empty_lines
+        ):
+            return _build_confidence(
+                "caution",
+                "Vendor appears somewhere in the OCR text, but not clearly in the top header lines.",
+            )
+
+        return _build_confidence(
+            "warning",
+            "Vendor does not clearly match the OCR text, so it may have been inferred incorrectly.",
+        )
+
+    def build_amount_confidence() -> ExtractedFieldConfidence:
+        if extracted_fields.amount is None:
+            return _build_confidence(
+                "warning",
+                "Amount is missing, so the draft still needs a human to fill in the final total.",
+            )
+
+        total_line = next(
+            (
+                line
+                for line in non_empty_lines
+                if re.search(r"(receipt total|grand total|amount due|total due|balance due|invoice total|total)", line, re.IGNORECASE)
+            ),
+            None,
+        )
+        amount_candidates = _build_amount_display_candidates(extracted_fields.amount)
+        strong_amount_sources = {
+            "receipt_total",
+            "grand_total",
+            "amount_due",
+            "balance_due",
+            "invoice_total",
+            "labeled_total",
+            "subtotal_plus_tax",
+        }
+
+        if provenance.amount and provenance.amount.source in strong_amount_sources:
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    "Amount matches a strong total source on the receipt, which is the best indicator for the final charge.",
+                ),
+                ocr_level,
+            )
+
+        if total_line and any(candidate in total_line for candidate in amount_candidates):
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    "Amount matches a total-like line in the OCR text, which is a strong signal for the final charge.",
+                ),
+                ocr_level,
+            )
+
+        if provenance.amount and provenance.amount.source in {"subtotal_only", "largest_visible_amount"}:
+            return _build_confidence(
+                "warning",
+                "Amount had to fall back to a weaker visible number, so it should be reviewed carefully before saving.",
+            )
+
+        if any(candidate.lower() in normalized_ocr for candidate in amount_candidates):
+            return _build_confidence(
+                "caution",
+                "Amount appears in the OCR text, but not on a clearly labeled total line.",
+            )
+
+        return _build_confidence(
+            "warning",
+            "Amount is not clearly supported by the OCR text, so it may be incorrect.",
+        )
+
+    def build_date_confidence() -> ExtractedFieldConfidence:
+        if not extracted_fields.date:
+            return _build_confidence(
+                "warning",
+                "Date is missing, so the receipt still needs a manual date review.",
+            )
+
+        date_line = next(
+            (
+                line
+                for line in non_empty_lines
+                if re.search(r"(receipt date|invoice date|date|issued|due date)", line, re.IGNORECASE)
+            ),
+            None,
+        )
+        date_candidates = _build_date_display_candidates(extracted_fields.date)
+        strong_date_sources = {"receipt_date", "invoice_date", "labeled_date"}
+
+        if provenance.date and provenance.date.source in strong_date_sources:
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    "Date matches a labeled date line in the OCR output, which is a strong signal for the receipt date.",
+                ),
+                ocr_level,
+            )
+
+        if date_line and any(candidate in date_line for candidate in date_candidates):
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    "Date matches a date-like line in the OCR output, which is a strong signal for the receipt date.",
+                ),
+                ocr_level,
+            )
+
+        if any(candidate.lower() in normalized_ocr for candidate in date_candidates):
+            return _build_confidence(
+                "caution",
+                "Date appears in the OCR text, but not on a clearly labeled date line.",
+            )
+
+        return _build_confidence(
+            "warning",
+            "Date is not clearly supported by the OCR text and may have been inferred loosely.",
+        )
+
+    def build_category_confidence() -> ExtractedFieldConfidence:
+        if not extracted_fields.category:
+            return _build_confidence(
+                "warning",
+                "Category is still empty, so it needs a human decision before save.",
+            )
+
+        if provenance.category and provenance.category.source == "learned_category":
+            return _build_confidence(
+                "caution",
+                "Category came from prior correction history for this vendor, so it should still be checked against the current receipt.",
+            )
+
+        keywords = CATEGORY_KEYWORDS.get(extracted_fields.category, ())
+        vendor_hints = CATEGORY_VENDOR_HINTS.get(extracted_fields.category, ())
+        normalized_vendor = _normalize_comparable_text(extracted_fields.vendor)
+        line_item_text = " ".join(
+            str(item.description).lower()
+            for item in (extracted_fields.line_items or [])
+            if item.description
+        )
+        ocr_matches = [keyword for keyword in keywords if keyword in normalized_ocr]
+        vendor_matches = [
+            hint for hint in vendor_hints if hint in normalized_vendor
+        ]
+        line_item_matches = [
+            keyword for keyword in keywords if keyword in line_item_text
+        ]
+
+        if vendor_matches or len(line_item_matches) >= 2 or len(ocr_matches) >= 2:
+            evidence = list(dict.fromkeys(vendor_matches[:1] + line_item_matches[:2] + ocr_matches[:2]))
+            return _maybe_downgrade_from_weak_ocr(
+                _build_confidence(
+                    "strong",
+                    f"Category is strongly supported by merchant or receipt evidence ({', '.join(evidence[:3])}).",
+                ),
+                ocr_level,
+            )
+
+        if vendor_matches or line_item_matches or ocr_matches:
+            evidence = (vendor_matches + line_item_matches + ocr_matches)[0]
+            return _build_confidence(
+                "caution",
+                f"Category is supported by one clear clue ({evidence}), but still deserves a quick review.",
+            )
+
+        return _build_confidence(
+            "warning",
+            "Category is not clearly supported by OCR keywords, so it may be a fuzzy guess.",
+        )
+
+    return ExtractionFieldConfidence(
+        vendor=build_vendor_confidence(),
+        amount=build_amount_confidence(),
+        date=build_date_confidence(),
+        category=build_category_confidence(),
+    )
 
 
 def _extraction_schema() -> dict:
@@ -1536,6 +1887,29 @@ def _build_extraction_provenance(
     return ExtractionProvenance.model_validate(provenance_payload)
 
 
+def _build_extraction_outcome(
+    *,
+    ocr_text: str,
+    pre_learning_fields: ExtractedExpenseFields,
+    final_fields: ExtractedExpenseFields,
+    heuristic_candidates: HeuristicExtractionCandidates,
+) -> ExtractionOutcome:
+    provenance = _build_extraction_provenance(
+        pre_learning_fields=pre_learning_fields,
+        final_fields=final_fields,
+        heuristic_candidates=heuristic_candidates,
+    )
+    return ExtractionOutcome(
+        fields=final_fields,
+        provenance=provenance,
+        field_confidence=_build_field_confidence(
+            ocr_text=ocr_text,
+            extracted_fields=final_fields,
+            provenance=provenance,
+        ),
+    )
+
+
 def _merge_hybrid_extraction(
     extracted_fields: ExtractedExpenseFields,
     heuristic_candidates: HeuristicExtractionCandidates,
@@ -1645,13 +2019,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     if not settings.openai_api_key:
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
 
         raise HTTPException(
@@ -1688,13 +2060,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
 
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
 
         raise HTTPException(
@@ -1704,13 +2074,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     except error.URLError as exc:
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
 
         raise HTTPException(
@@ -1723,13 +2091,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     except HTTPException as exc:
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
         raise exc
 
@@ -1738,13 +2104,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     except json.JSONDecodeError as exc:
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
 
         raise HTTPException(
@@ -1757,13 +2121,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     except ValueError as exc:
         if _has_heuristic_signal(heuristic_fields):
             final_fields = _apply_vendor_learning_hint(heuristic_fields)
-            return ExtractionOutcome(
-                fields=final_fields,
-                provenance=_build_extraction_provenance(
-                    pre_learning_fields=heuristic_fields,
-                    final_fields=final_fields,
-                    heuristic_candidates=heuristic_candidates,
-                ),
+            return _build_extraction_outcome(
+                ocr_text=ocr_text,
+                pre_learning_fields=heuristic_fields,
+                final_fields=final_fields,
+                heuristic_candidates=heuristic_candidates,
             )
 
         raise HTTPException(
@@ -1778,13 +2140,11 @@ def extract_expense_data(ocr_text: str) -> ExtractionOutcome:
     )
     final_fields = _apply_vendor_learning_hint(merged_fields)
 
-    return ExtractionOutcome(
-        fields=final_fields,
-        provenance=_build_extraction_provenance(
-            pre_learning_fields=merged_fields,
-            final_fields=final_fields,
-            heuristic_candidates=heuristic_candidates,
-        ),
+    return _build_extraction_outcome(
+        ocr_text=ocr_text,
+        pre_learning_fields=merged_fields,
+        final_fields=final_fields,
+        heuristic_candidates=heuristic_candidates,
     )
 
 

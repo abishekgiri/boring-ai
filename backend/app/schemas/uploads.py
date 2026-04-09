@@ -70,6 +70,12 @@ class ExtractedFieldProvenance(BaseModel):
     details: str
 
 
+class ExtractedFieldConfidence(BaseModel):
+    level: ClassificationLevel
+    badge: str
+    reason: str
+
+
 class ExtractionProvenance(BaseModel):
     vendor: Optional[ExtractedFieldProvenance] = None
     amount: Optional[ExtractedFieldProvenance] = None
@@ -81,6 +87,13 @@ class ExtractionProvenance(BaseModel):
     due_date: Optional[ExtractedFieldProvenance] = None
     payment_method: Optional[ExtractedFieldProvenance] = None
     line_items: Optional[ExtractedFieldProvenance] = None
+
+
+class ExtractionFieldConfidence(BaseModel):
+    vendor: Optional[ExtractedFieldConfidence] = None
+    amount: Optional[ExtractedFieldConfidence] = None
+    date: Optional[ExtractedFieldConfidence] = None
+    category: Optional[ExtractedFieldConfidence] = None
 
 
 class ExtractedExpenseFields(BaseModel):
@@ -193,6 +206,7 @@ class UploadRecord(BaseModel):
     extracted_fields: Optional[ExtractedExpenseFields] = None
     document_classification: Optional[DocumentClassification] = None
     extraction_provenance: Optional[ExtractionProvenance] = None
+    field_confidence: Optional[ExtractionFieldConfidence] = None
 
 
 class OcrResult(BaseModel):
@@ -206,3 +220,4 @@ class ExtractionResult(BaseModel):
     extracted_fields: ExtractedExpenseFields
     document_classification: Optional[DocumentClassification] = None
     extraction_provenance: Optional[ExtractionProvenance] = None
+    field_confidence: Optional[ExtractionFieldConfidence] = None

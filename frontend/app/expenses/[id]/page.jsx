@@ -19,6 +19,12 @@ const CATEGORY_OPTIONS = [
   "other",
 ];
 
+const SIGNAL_THEMES = {
+  strong: "border-emerald-900/10 bg-emerald-50 text-emerald-900",
+  caution: "border-amber-900/10 bg-amber-50 text-amber-900",
+  warning: "border-rose-900/10 bg-rose-50 text-rose-900",
+};
+
 function mapExpenseToForm(expense) {
   return {
     vendor: expense?.vendor ?? "",
@@ -229,6 +235,106 @@ function AuditStatusBadge({ changed }) {
   );
 }
 
+function SignalIcon({ level }) {
+  if (level === "strong") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 16 16"
+      >
+        <circle cx="8" cy="8" fill="currentColor" opacity="0.12" r="6.5" />
+        <path
+          d="m5.15 8.2 1.85 1.85 3.85-4.05"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.6"
+        />
+      </svg>
+    );
+  }
+
+  if (level === "caution") {
+    return (
+      <svg
+        aria-hidden="true"
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 16 16"
+      >
+        <path
+          d="M8 2.2 14 13H2L8 2.2Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M8 5.9v3.1"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.5"
+        />
+        <circle cx="8" cy="11.3" fill="currentColor" r=".75" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 16 16"
+    >
+      <circle cx="8" cy="8" r="5.75" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 4.75v3.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+      />
+      <circle cx="8" cy="11.25" fill="currentColor" r=".8" />
+    </svg>
+  );
+}
+
+function FieldConfidenceBadge({ confidence }) {
+  if (!confidence) {
+    return null;
+  }
+
+  const theme = SIGNAL_THEMES[confidence.level] ?? SIGNAL_THEMES.caution;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${theme}`}
+      title={confidence.reason}
+    >
+      <SignalIcon level={confidence.level} />
+      {confidence.badge}
+    </span>
+  );
+}
+
+function FieldConfidenceHint({ confidence, changedSinceExtraction = false }) {
+  if (!confidence?.reason) {
+    return null;
+  }
+
+  return (
+    <p className="mt-2 text-xs leading-5 text-stone-500">
+      <span className="font-semibold text-stone-700">
+        {changedSinceExtraction
+          ? "Original extraction confidence:"
+          : "Extraction confidence:"}
+      </span>{" "}
+      {confidence.reason}
+    </p>
+  );
+}
+
 export default function ExpenseDetailPage() {
   const params = useParams();
   const expenseId = params?.id;
@@ -355,12 +461,14 @@ export default function ExpenseDetailPage() {
   const isReceiptImage = receiptContentType.startsWith("image/");
   const isReceiptPdf = receiptContentType === "application/pdf";
   const extractionProvenance = uploadRecord?.extraction_provenance ?? null;
+  const extractionFieldConfidence = uploadRecord?.field_confidence ?? null;
   const extractedSnapshot = uploadRecord?.extracted_fields ?? null;
 
   const originHints = useMemo(
     () => ({
       vendor: {
         provenance: extractionProvenance?.vendor ?? null,
+        confidence: extractionFieldConfidence?.vendor ?? null,
         changedSinceExtraction: didSavedValueChange(
           expense?.vendor,
           extractedSnapshot?.vendor,
@@ -369,6 +477,7 @@ export default function ExpenseDetailPage() {
       },
       amount: {
         provenance: extractionProvenance?.amount ?? null,
+        confidence: extractionFieldConfidence?.amount ?? null,
         changedSinceExtraction: didSavedValueChange(
           expense?.amount,
           extractedSnapshot?.amount,
@@ -377,6 +486,7 @@ export default function ExpenseDetailPage() {
       },
       date: {
         provenance: extractionProvenance?.date ?? null,
+        confidence: extractionFieldConfidence?.date ?? null,
         changedSinceExtraction: didSavedValueChange(
           expense?.date,
           extractedSnapshot?.date,
@@ -385,6 +495,7 @@ export default function ExpenseDetailPage() {
       },
       category: {
         provenance: extractionProvenance?.category ?? null,
+        confidence: extractionFieldConfidence?.category ?? null,
         changedSinceExtraction: didSavedValueChange(
           expense?.category,
           extractedSnapshot?.category,
@@ -392,7 +503,7 @@ export default function ExpenseDetailPage() {
         ),
       },
     }),
-    [expense, extractedSnapshot, extractionProvenance]
+    [expense, extractedSnapshot, extractionFieldConfidence, extractionProvenance]
   );
   const auditTrailRows = useMemo(() => {
     if (!expense) {
@@ -639,9 +750,12 @@ export default function ExpenseDetailPage() {
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  Vendor
-                </span>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    Vendor
+                  </span>
+                  <FieldConfidenceBadge confidence={originHints.vendor.confidence} />
+                </div>
                 <input
                   className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200 disabled:bg-stone-50 disabled:text-stone-600"
                   disabled={!isEditing || isSaving}
@@ -655,12 +769,19 @@ export default function ExpenseDetailPage() {
                   changedSinceExtraction={originHints.vendor.changedSinceExtraction}
                   provenance={originHints.vendor.provenance}
                 />
+                <FieldConfidenceHint
+                  changedSinceExtraction={originHints.vendor.changedSinceExtraction}
+                  confidence={originHints.vendor.confidence}
+                />
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  Amount
-                </span>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    Amount
+                  </span>
+                  <FieldConfidenceBadge confidence={originHints.amount.confidence} />
+                </div>
                 <input
                   className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200 disabled:bg-stone-50 disabled:text-stone-600"
                   disabled={!isEditing || isSaving}
@@ -675,12 +796,19 @@ export default function ExpenseDetailPage() {
                   changedSinceExtraction={originHints.amount.changedSinceExtraction}
                   provenance={originHints.amount.provenance}
                 />
+                <FieldConfidenceHint
+                  changedSinceExtraction={originHints.amount.changedSinceExtraction}
+                  confidence={originHints.amount.confidence}
+                />
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  Date
-                </span>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    Date
+                  </span>
+                  <FieldConfidenceBadge confidence={originHints.date.confidence} />
+                </div>
                 <input
                   className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200 disabled:bg-stone-50 disabled:text-stone-600"
                   disabled={!isEditing || isSaving}
@@ -694,12 +822,19 @@ export default function ExpenseDetailPage() {
                   changedSinceExtraction={originHints.date.changedSinceExtraction}
                   provenance={originHints.date.provenance}
                 />
+                <FieldConfidenceHint
+                  changedSinceExtraction={originHints.date.changedSinceExtraction}
+                  confidence={originHints.date.confidence}
+                />
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  Category
-                </span>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    Category
+                  </span>
+                  <FieldConfidenceBadge confidence={originHints.category.confidence} />
+                </div>
                 <select
                   className="w-full rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-amber-700/30 focus:ring-2 focus:ring-amber-200 disabled:bg-stone-50 disabled:text-stone-600"
                   disabled={!isEditing || isSaving}
@@ -718,6 +853,10 @@ export default function ExpenseDetailPage() {
                 <FieldOriginHint
                   changedSinceExtraction={originHints.category.changedSinceExtraction}
                   provenance={originHints.category.provenance}
+                />
+                <FieldConfidenceHint
+                  changedSinceExtraction={originHints.category.changedSinceExtraction}
+                  confidence={originHints.category.confidence}
                 />
               </label>
             </div>
