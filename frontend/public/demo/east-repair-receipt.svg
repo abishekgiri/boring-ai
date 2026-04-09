@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600" role="img" aria-labelledby="title desc">
+  <title id="title">East Repair Inc demo receipt</title>
+  <desc id="desc">Sample receipt used for the boring-ai demo flow.</desc>
+  <rect width="1200" height="1600" fill="#ffffff" />
+  <g fill="#111111" font-family="Arial, Helvetica, sans-serif">
+    <text x="80" y="120" font-size="44" font-weight="700">East Repair Inc.</text>
+    <text x="80" y="170" font-size="28">1912 Harvest Lane</text>
+    <text x="80" y="210" font-size="28">New York, NY 12210</text>
+
+    <text x="760" y="120" font-size="52" font-weight="700">ONLINE RECEIPT</text>
+
+    <text x="80" y="320" font-size="24" font-weight="700">BILL TO</text>
+    <text x="320" y="320" font-size="24" font-weight="700">SHIP TO</text>
+    <text x="700" y="320" font-size="24" font-weight="700">RECEIPT #</text>
+    <text x="980" y="320" font-size="24" font-weight="700">US-001</text>
+
+    <text x="80" y="360" font-size="26">John Smith</text>
+    <text x="320" y="360" font-size="26">John Smith</text>
+    <text x="700" y="360" font-size="24" font-weight="700">RECEIPT DATE</text>
+    <text x="980" y="360" font-size="24" font-weight="700">11/02/2019</text>
+
+    <text x="80" y="400" font-size="26">2 Court Square</text>
+    <text x="320" y="400" font-size="26">3787 Pineview Drive</text>
+    <text x="700" y="400" font-size="24" font-weight="700">P.O.#</text>
+    <text x="980" y="400" font-size="24" font-weight="700">2312/2019</text>
+
+    <text x="80" y="440" font-size="26">New York, NY 12210</text>
+    <text x="320" y="440" font-size="26">Cambridge, MA 12210</text>
+    <text x="700" y="440" font-size="24" font-weight="700">DUE DATE</text>
+    <text x="980" y="440" font-size="24" font-weight="700">26/02/2019</text>
+
+    <line x1="80" y1="520" x2="1120" y2="520" stroke="#111111" stroke-width="4" />
+    <text x="80" y="620" font-size="68" font-weight="700">Receipt Total</text>
+    <text x="870" y="620" font-size="72" font-weight="700">$154.06</text>
+    <line x1="80" y1="670" x2="1120" y2="670" stroke="#111111" stroke-width="4" />
+
+    <text x="80" y="760" font-size="24" font-weight="700">QTY</text>
+    <text x="180" y="760" font-size="24" font-weight="700">DESCRIPTION</text>
+    <text x="710" y="760" font-size="24" font-weight="700">UNIT PRICE</text>
+    <text x="980" y="760" font-size="24" font-weight="700">AMOUNT</text>
+
+    <text x="80" y="820" font-size="28">1</text>
+    <text x="180" y="820" font-size="28">Front and rear brake cables</text>
+    <text x="790" y="820" font-size="28">100.00</text>
+    <text x="1000" y="820" font-size="28">100.00</text>
+
+    <text x="80" y="870" font-size="28">2</text>
+    <text x="180" y="870" font-size="28">New set of pedal arms</text>
+    <text x="810" y="870" font-size="28">15.00</text>
+    <text x="1010" y="870" font-size="28">30.00</text>
+
+    <text x="80" y="920" font-size="28">3</text>
+    <text x="180" y="920" font-size="28">Labor 3hrs</text>
+    <text x="830" y="920" font-size="28">5.00</text>
+    <text x="1010" y="920" font-size="28">15.00</text>
+
+    <text x="80" y="1060" font-size="30" font-weight="700">PAYMENT INSTRUCTION</text>
+    <text x="80" y="1110" font-size="28">Paypal email</text>
+    <text x="80" y="1150" font-size="28">receipt@gmail.com</text>
+    <text x="80" y="1210" font-size="28">Bank transfer</text>
+    <text x="80" y="1250" font-size="28">Routing (ABC) 0560120214</text>
+
+    <text x="760" y="1030" font-size="28">Subtotal</text>
+    <text x="1030" y="1030" font-size="28">145.00</text>
+    <text x="760" y="1080" font-size="28">Sales Tax 6.25%</text>
+    <text x="1030" y="1080" font-size="28">9.06</text>
+
+    <text x="80" y="1390" font-size="30" font-weight="700">TERMS &amp; CONDITIONS</text>
+    <text x="80" y="1440" font-size="28">Payment is due within 15 days</text>
+    <text x="80" y="1490" font-size="28">Please make checks payable to: East Repair Inc.</text>
+  </g>
+</svg>

@@ -2,11 +2,17 @@ import Link from "next/link";
 import HealthStatus from "../components/health-status";
 import UploadForm from "../components/upload-form";
 
-const phaseChecklist = [
-  "Each saved expense has a detail page with the original source record",
-  "Users can edit vendor, amount, date, and category after save",
-  "Raw OCR stays visible for trust and debugging",
-  "Receipt preview stays connected to the saved expense record",
+const productChecklist = [
+  "Upload images or PDFs and keep the original receipt tied to each saved record",
+  "Run OCR first so the raw text stays visible and auditable",
+  "Review extracted fields before saving, then edit saved records later",
+  "Browse, export, and clean up expenses from one workspace",
+];
+
+const firstRunSteps = [
+  "Click Try demo receipt below if you want a predictable walkthrough.",
+  "Store the file locally, then run OCR to reveal the raw text.",
+  "Extract fields, review the draft, save it, and open the workspace.",
 ];
 
 const apiBaseUrl =
@@ -48,16 +54,15 @@ export default async function Home() {
         <header className="mb-10 flex flex-col gap-6 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 8 complete
+              Self-hosted AI receipt workflow
             </p>
             <h1 className="max-w-3xl font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               boring-ai
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-stone-700">
-              Self-hosted AI back office for freelancers. The product is now
-              moving past extraction into a fuller workflow: inspect saved
-              expenses, edit mistakes, and keep the receipt plus OCR source
-              visible.
+              Turn receipts into editable expenses without losing the source
+              material. Upload a file, inspect the OCR, review the AI draft,
+              save a record, and export what you need.
             </p>
           </div>
 
@@ -84,13 +89,13 @@ export default async function Home() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-amber-800">
-              Detail checklist
+              What works right now
             </p>
             <h2 className="mt-3 font-serif text-3xl tracking-tight text-stone-950">
-              What Phase 8 locks down
+              A small workflow with real utility
             </h2>
             <ul className="mt-6 space-y-3">
-              {phaseChecklist.map((item) => (
+              {productChecklist.map((item) => (
                 <li
                   key={item}
                   className="flex items-start gap-3 rounded-2xl border border-stone-900/8 bg-stone-50/80 px-4 py-3"
@@ -105,12 +110,13 @@ export default async function Home() {
 
             <div className="mt-8 rounded-[1.5rem] bg-stone-950 px-5 py-4 text-stone-100">
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-amber-300">
-                Next after this
+                First run
               </p>
-              <p className="mt-2 text-base leading-7 text-stone-300">
-                Phase 9 can build on this with polish, smarter review flows, or
-                richer reporting.
-              </p>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-7 text-stone-300">
+                {firstRunSteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
             </div>
           </div>
 

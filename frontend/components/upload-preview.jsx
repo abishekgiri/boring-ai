@@ -31,6 +31,7 @@ export default function UploadPreview({
   uploadedFile,
   isUploading,
   errorMessage,
+  selectedSource,
 }) {
   const uploadedPreviewUrl = buildPreviewUrl(apiBaseUrl, uploadedFile?.file_url);
   const previewUrl = uploadedPreviewUrl ?? localPreviewUrl;
@@ -57,6 +58,10 @@ export default function UploadPreview({
           <span className="rounded-full border border-emerald-900/10 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-900">
             Stored locally
           </span>
+        ) : selectedSource === "demo" ? (
+          <span className="rounded-full border border-sky-900/10 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-900">
+            Demo receipt
+          </span>
         ) : null}
       </div>
 
@@ -68,7 +73,8 @@ export default function UploadPreview({
 
       {!selectedFile && !uploadedFile ? (
         <div className="mt-5 flex min-h-72 items-center justify-center rounded-[1.5rem] border border-dashed border-stone-900/10 bg-stone-50/70 px-6 text-center text-sm leading-7 text-stone-600">
-          Choose a receipt image or PDF to see the preview area come alive.
+          Choose a receipt image or PDF, or load the demo receipt, to see the
+          preview area come alive.
         </div>
       ) : (
         <div className="mt-5 space-y-4">

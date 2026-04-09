@@ -208,7 +208,7 @@ export default function ExpensesPage() {
         <header className="mb-8 flex flex-col gap-5 border-b border-stone-900/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-amber-800">
-              Phase 8 complete
+              Saved expenses
             </p>
             <h1 className="font-serif text-5xl leading-none tracking-tight text-stone-950 sm:text-6xl">
               Expense workspace
