@@ -45,6 +45,8 @@ def _get_filtered_expenses(
     category: Optional[ExpenseCategory] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
 ) -> list[ExpenseRecord]:
     normalized_search = search.strip().lower() if search else None
     normalized_category = category.strip().lower() if category else None
@@ -53,12 +55,24 @@ def _get_filtered_expenses(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="date_from must be on or before date_to.",
         )
+    if sort_by not in {"date", "amount"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="sort_by must be either 'date' or 'amount'.",
+        )
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="sort_dir must be either 'asc' or 'desc'.",
+        )
 
     return list_expenses(
         search=normalized_search or None,
         category=normalized_category or None,
         date_from=date_from,
         date_to=date_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
 
@@ -128,12 +142,16 @@ def read_expenses(
     category: Optional[ExpenseCategory] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
 ) -> ExpenseListResponse:
     items = _get_filtered_expenses(
         search=search,
         category=category,
         date_from=date_from,
         date_to=date_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return ExpenseListResponse(items=items, total=len(items))
 
@@ -144,12 +162,16 @@ def export_expenses(
     category: Optional[ExpenseCategory] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
 ) -> Response:
     items = _get_filtered_expenses(
         search=search,
         category=category,
         date_from=date_from,
         date_to=date_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
     output = StringIO()
