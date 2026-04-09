@@ -3,7 +3,7 @@ services:
     name: boring-ai-api
     runtime: docker
     plan: starter
-    dockerContext: .
+    dockerContext: backend
     dockerfilePath: backend/Dockerfile
     healthCheckPath: /health
     autoDeployTrigger: commit
