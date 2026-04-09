@@ -28,7 +28,7 @@ from app.schemas.expenses import (
     ExpenseRecord,
     ExpenseUpdate,
 )
-from app.schemas.uploads import ExpenseCategory
+from app.schemas.uploads import ClassificationLevel, DocumentType, ExpenseCategory, UploadRecord
 from app.services.file_storage import get_upload_metadata
 
 
@@ -44,6 +44,8 @@ def _get_filtered_expenses(
     *,
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
+    review_only: bool = False,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -77,10 +79,45 @@ def _get_filtered_expenses(
         sort_dir=sort_dir,
     )
     annotated_items = annotate_duplicate_expenses(items)
-    if duplicates_only:
-        return [item for item in annotated_items if item.has_possible_duplicate]
+    enriched_items: list[ExpenseRecord] = []
+    for item in annotated_items:
+        try:
+            upload_record = get_upload_metadata(item.upload_id)
+        except HTTPException:
+            if not (document_type or review_only):
+                enriched_items.append(item)
+            continue
 
-    return annotated_items
+        classification = upload_record.document_classification
+        if document_type and (
+            classification is None or classification.document_type != document_type
+        ):
+            continue
+
+        review_level, review_badge, review_reason = _build_review_signal(upload_record)
+        if review_only and review_level not in {"warning", "caution"}:
+            continue
+
+        enriched_items.append(
+            item.model_copy(
+                update={
+                    "document_type": (
+                        classification.document_type if classification else None
+                    ),
+                    "document_badge": (
+                        classification.badge if classification else None
+                    ),
+                    "review_level": review_level,
+                    "review_badge": review_badge,
+                    "review_reason": review_reason,
+                }
+            )
+        )
+
+    if duplicates_only:
+        return [item for item in enriched_items if item.has_possible_duplicate]
+
+    return enriched_items
 
 
 def _build_duplicate_match_reason(
@@ -94,6 +131,72 @@ def _build_duplicate_match_reason(
         reasons.append(f"{day_distance}-day date gap")
 
     return ", ".join(reasons)
+
+
+def _format_review_field_names(field_names: list[str]) -> str:
+    if not field_names:
+        return ""
+    if len(field_names) == 1:
+        return field_names[0]
+    if len(field_names) == 2:
+        return f"{field_names[0]} and {field_names[1]}"
+    return f"{', '.join(field_names[:-1])}, and {field_names[-1]}"
+
+
+def _build_review_signal(upload_record: UploadRecord) -> tuple[
+    Optional[ClassificationLevel],
+    Optional[str],
+    Optional[str],
+]:
+    field_confidence = upload_record.field_confidence
+    if not field_confidence:
+        if upload_record.extracted_fields:
+            return (
+                "caution",
+                "Review suggested",
+                "This record was saved before field-level confidence was tracked, so the original extraction still deserves a quick review.",
+            )
+        return None, None, None
+
+    confidence_map = {
+        "vendor": field_confidence.vendor,
+        "amount": field_confidence.amount,
+        "date": field_confidence.date,
+        "category": field_confidence.category,
+    }
+    warning_fields = [
+        field_name
+        for field_name, confidence in confidence_map.items()
+        if confidence and confidence.level == "warning"
+    ]
+    caution_fields = [
+        field_name
+        for field_name, confidence in confidence_map.items()
+        if confidence and confidence.level == "caution"
+    ]
+
+    if warning_fields:
+        return (
+            "warning",
+            "Needs review",
+            f"Low extraction confidence for {_format_review_field_names(warning_fields)} in the original draft.",
+        )
+
+    if caution_fields:
+        return (
+            "caution",
+            "Review suggested",
+            f"Medium extraction confidence for {_format_review_field_names(caution_fields)} in the original draft.",
+        )
+
+    if any(confidence_map.values()):
+        return (
+            "strong",
+            "Looks strong",
+            "The original extraction looked strong across the core fields.",
+        )
+
+    return None, None, None
 
 
 @router.post("", response_model=ExpenseRecord, status_code=201)
@@ -147,6 +250,8 @@ def check_duplicate_expenses(payload: ExpenseDuplicateCheck) -> ExpenseDuplicate
 def read_expenses(
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
+    review_only: bool = False,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -156,6 +261,8 @@ def read_expenses(
     items = _get_filtered_expenses(
         search=search,
         category=category,
+        document_type=document_type,
+        review_only=review_only,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
@@ -169,6 +276,8 @@ def read_expenses(
 def export_expenses(
     search: Optional[str] = None,
     category: Optional[ExpenseCategory] = None,
+    document_type: Optional[DocumentType] = None,
+    review_only: bool = False,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     sort_by: str = "date",
@@ -178,6 +287,8 @@ def export_expenses(
     items = _get_filtered_expenses(
         search=search,
         category=category,
+        document_type=document_type,
+        review_only=review_only,
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
