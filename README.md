@@ -31,13 +31,17 @@ first-run path:
 ## What it does
 
 - Upload receipts as images or PDFs
+- Classify uploaded files as receipts, invoices, or unknown documents
 - Extract raw text with Tesseract OCR
 - Convert OCR text into structured fields with AI
 - Keep the extracted fields editable before save
 - Show OCR and extraction confidence signals so users know when to trust the draft and when to review it carefully
+- Show field-level confidence and extraction provenance for the core saved fields
 - Store expenses in SQLite
 - Browse saved expenses in a workspace
-- Search and filter by vendor, category, and date
+- Search and filter by vendor, OCR text, category, document type, duplicate status, and review status
+- Surface likely duplicates before save and inside the workspace
+- Sort the workspace by date, amount, or review priority
 - Open saved expenses in a detail view and edit them later
 - Export filtered expenses to CSV
 - Delete bad records
@@ -108,6 +112,7 @@ What works today:
 - expense workspace
 - CSV export
 - delete action
+- review-priority workspace triage
 - Render and Vercel deployment setup
 
 ## What we have built so far
@@ -116,16 +121,24 @@ The repo has moved past a basic OCR demo. On `main`, `boring-ai` now includes:
 
 - local upload and receipt preview for images and PDFs
 - OCR with Tesseract and PDF support
+- OCR preprocessing with multiple image variants and normalized text cleanup
+- document classification for receipts, invoices, and unknown files
 - hybrid receipt extraction that combines heuristics with LLM parsing
+- richer extracted receipt fields: subtotal, tax, receipt number, due date, payment method, and line items
 - editable review before save, with OCR confidence and extraction confidence signals
 - field-level confidence indicators for vendor, amount, date, and category
+- extraction provenance showing where saved values came from
 - field validation checks before save
 - duplicate detection warnings before saving a new expense
 - SQLite persistence for expense records
 - expense detail and edit flow for saved records
+- audit trail showing original extraction vs saved values
+- saved-detail confidence and provenance visibility after save
 - workspace search by vendor and OCR text
-- category and date filters
-- sort controls for date and amount
+- category, date, document type, duplicate, and review-status filters
+- sort controls for date, amount, and review priority
+- workspace summary cards for review status, document type, duplicates, and reset-to-default
+- active-view hints so the workspace always explains why a subset is showing
 - CSV export for filtered expense views
 - delete support for bad records
 - correction learning for vendor normalization and category hints
@@ -135,8 +148,8 @@ The repo has moved past a basic OCR demo. On `main`, `boring-ai` now includes:
 Recent advanced improvements on `main`:
 
 - Phase 11-style trust work: field-level confidence, validation, and duplicate warnings
-- Phase 12-style extraction work: hybrid extraction plus stronger total/date/tax fallbacks
-- Phase 13-style reliability work: evals, correction learning, and smarter workspace search and sorting
+- Phase 12-style extraction work: hybrid extraction plus stronger total/date/tax fallbacks, richer receipt fields, provenance, and OCR preprocessing
+- Phase 13-style reliability work: evals, correction learning, duplicate surfacing, workspace triage, and smarter workspace search and sorting
 
 What is intentionally not here yet:
 
@@ -165,6 +178,33 @@ flowchart LR
   Review --> Save["SQLite expense record"]
   Save --> Workspace["Workspace, detail view, and export"]
 ```
+
+## Workspace triage
+
+The expense workspace now behaves like a review inbox, not just a table.
+
+- review-priority sorting brings weak records to the top
+- review-status filters separate low-confidence, medium-confidence, and strong records
+- document-type filters separate receipts, invoices, and unknown files
+- duplicate surfacing highlights likely duplicate groups directly in the list
+- summary cards let users jump into review queues in one click
+- active-view hints explain why the current subset is being shown
+
+This makes cleanup, export review, and bookkeeping handoff much faster.
+
+## Release readiness
+
+Recent verification on the current codebase:
+
+- `cd backend && ./.venv/bin/python -m compileall app`
+- `cd frontend && npx next build --webpack`
+- `cd backend && ./.venv/bin/python ../evals/run_receipt_extraction.py`
+- mixed-record workspace QA covering:
+  - review-priority sorting
+  - review-status filters
+  - document-type filters
+  - duplicate-only view
+  - filtered CSV export alignment
 
 ## Quick start
 
