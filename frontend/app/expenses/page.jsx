@@ -32,6 +32,19 @@ const REVIEW_FILTER_OPTIONS = [
   { value: "strong", label: "Looks strong" },
 ];
 
+const REVIEW_STATUS_LABELS = {
+  needs_review: "Needs review",
+  warning: "Low confidence",
+  caution: "Medium confidence",
+  strong: "Looks strong",
+};
+
+const DOCUMENT_TYPE_LABELS = {
+  receipt: "Receipts",
+  invoice: "Invoices",
+  unknown: "Unknown files",
+};
+
 function formatCurrency(amount) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -187,6 +200,16 @@ export default function ExpensesPage() {
       expense.review_level === "warning" || expense.review_level === "caution"
   ).length;
   const canExport = !isLoading && total > 0;
+  const activeViewHints = [
+    reviewStatus ? `Review: ${REVIEW_STATUS_LABELS[reviewStatus]}` : null,
+    documentType ? `Document: ${DOCUMENT_TYPE_LABELS[documentType]}` : null,
+    duplicatesOnly ? "Possible duplicates only" : null,
+    sortOption === "review-desc"
+      ? "Sorted by review priority"
+      : sortOption === "review-asc"
+        ? "Sorted by strongest first"
+        : null,
+  ].filter(Boolean);
   const exportUrl = buildExpensesUrl(
     "export",
     deferredSearch,
@@ -433,7 +456,7 @@ export default function ExpensesPage() {
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 reviewStatus === "warning"
-                  ? "border-rose-300 bg-rose-50"
+                  ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200 shadow-[0_18px_40px_rgba(244,63,94,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-rose-50/70"
               }`}
               onClick={() => applyWorkspacePreset("warning")}
@@ -448,12 +471,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Lowest-confidence records. Sort these to the top and fix them first.
               </p>
+              {reviewStatus === "warning" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 reviewStatus === "caution"
-                  ? "border-amber-300 bg-amber-50"
+                  ? "border-amber-300 bg-amber-50 ring-2 ring-amber-200 shadow-[0_18px_40px_rgba(245,158,11,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-amber-50/70"
               }`}
               onClick={() => applyWorkspacePreset("caution")}
@@ -468,12 +496,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Medium-confidence records that deserve a quick second look.
               </p>
+              {reviewStatus === "caution" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 reviewStatus === "strong"
-                  ? "border-emerald-300 bg-emerald-50"
+                  ? "border-emerald-300 bg-emerald-50 ring-2 ring-emerald-200 shadow-[0_18px_40px_rgba(16,185,129,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-emerald-50/70"
               }`}
               onClick={() => applyWorkspacePreset("strong")}
@@ -488,12 +521,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Strong records that can stay in the background while you clean up the rest.
               </p>
+              {reviewStatus === "strong" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 documentType === "receipt"
-                  ? "border-sky-300 bg-sky-50"
+                  ? "border-sky-300 bg-sky-50 ring-2 ring-sky-200 shadow-[0_18px_40px_rgba(14,165,233,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-sky-50/70"
               }`}
               onClick={() => applyWorkspacePreset("receipt")}
@@ -508,12 +546,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Standard receipt records with totals and merchant details ready to inspect.
               </p>
+              {documentType === "receipt" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 documentType === "invoice"
-                  ? "border-violet-300 bg-violet-50"
+                  ? "border-violet-300 bg-violet-50 ring-2 ring-violet-200 shadow-[0_18px_40px_rgba(139,92,246,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-violet-50/70"
               }`}
               onClick={() => applyWorkspacePreset("invoice")}
@@ -528,12 +571,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Invoice-style documents that may need extra care around due dates and totals.
               </p>
+              {documentType === "invoice" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-violet-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 documentType === "unknown"
-                  ? "border-slate-300 bg-slate-100"
+                  ? "border-slate-300 bg-slate-100 ring-2 ring-slate-200 shadow-[0_18px_40px_rgba(51,65,85,0.10)]"
                   : "border-stone-900/10 bg-white hover:bg-slate-100"
               }`}
               onClick={() => applyWorkspacePreset("unknown")}
@@ -548,12 +596,17 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Documents that do not clearly look like a receipt or invoice and may need manual review.
               </p>
+              {documentType === "unknown" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
               className={`rounded-[1.5rem] border px-5 py-5 text-left shadow-sm transition ${
                 duplicatesOnly
-                  ? "border-fuchsia-300 bg-fuchsia-50"
+                  ? "border-fuchsia-300 bg-fuchsia-50 ring-2 ring-fuchsia-200 shadow-[0_18px_40px_rgba(192,38,211,0.12)]"
                   : "border-stone-900/10 bg-white hover:bg-fuchsia-50/70"
               }`}
               onClick={() => applyWorkspacePreset("duplicates")}
@@ -568,6 +621,11 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Compare matching records before export or deletion.
               </p>
+              {duplicatesOnly ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
 
             <button
@@ -588,6 +646,11 @@ export default function ExpensesPage() {
               <p className="mt-3 text-sm leading-6 text-stone-600">
                 Return to all visible records with the default newest-first workspace view.
               </p>
+              {!reviewStatus && !documentType && !duplicatesOnly && sortOption === "date-desc" ? (
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700">
+                  Active view
+                </p>
+              ) : null}
             </button>
           </div>
         </section>
@@ -786,6 +849,22 @@ export default function ExpensesPage() {
                 : `${total} expense${total === 1 ? "" : "s"} found`}
             </p>
           </div>
+
+          {!isLoading && activeViewHints.length > 0 ? (
+            <div className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-stone-900/10 bg-stone-50/80 px-4 py-3 text-sm text-stone-700">
+              <span className="font-semibold uppercase tracking-[0.16em] text-stone-500">
+                Active view
+              </span>
+              {activeViewHints.map((hint) => (
+                <span
+                  className="inline-flex items-center rounded-full border border-stone-900/10 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700"
+                  key={hint}
+                >
+                  {hint}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           {!isLoading && duplicateVisibleCount > 0 ? (
             <div className="mt-6 rounded-2xl border border-amber-900/10 bg-amber-50/80 px-4 py-3 text-sm leading-7 text-amber-950">
